@@ -1,0 +1,626 @@
+{{ define "inspector.tmpl" }}
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartLink GroApp - User &amp; Role Inspector</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome 6 Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- jQuery & Select2 -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <style>
+        [v-cloak] { display: none; }
+
+        /* Modern Select2 Styling */
+        .select2-container .select2-selection--single {
+            height: 36px !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 0.5rem !important;
+            padding: 3px 8px !important;
+            display: flex !important;
+            align-items: center !important;
+            background-color: #ffffff !important;
+            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            color: #1e293b !important;
+            font-size: 0.8125rem !important;
+            line-height: 1.25rem !important;
+            padding-left: 2px !important;
+            padding-right: 20px !important;
+            font-weight: 500 !important;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 34px !important;
+            right: 6px !important;
+        }
+        .select2-container--default.select2-container--focus .select2-selection--single,
+        .select2-container--default.select2-container--open .select2-selection--single {
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+            outline: none !important;
+        }
+        .select2-dropdown {
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 0.75rem !important;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1) !important;
+            overflow: hidden !important;
+            font-size: 0.8125rem !important;
+            z-index: 99999 !important;
+            background-color: #ffffff !important;
+        }
+        .select2-search--dropdown {
+            padding: 8px !important;
+            background-color: #f8fafc !important;
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+        .select2-search--dropdown .select2-search__field {
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 0.5rem !important;
+            padding: 6px 10px !important;
+            outline: none !important;
+            font-size: 0.8125rem !important;
+            width: 100% !important;
+            background-color: #ffffff !important;
+        }
+        .select2-search--dropdown .select2-search__field:focus {
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+        }
+        .select2-results__option {
+            padding: 8px 12px !important;
+            font-size: 0.8125rem !important;
+            color: #334155 !important;
+        }
+        .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+            background-color: #4f46e5 !important;
+            color: #ffffff !important;
+        }
+        .select2-container--default .select2-results__option--selected {
+            background-color: #e0e7ff !important;
+            color: #3730a3 !important;
+            font-weight: 600 !important;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+    <div id="app" v-cloak class="flex flex-col min-h-screen">
+        <!-- Top Navigation Bar -->
+        <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-40 border-b border-slate-800">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white shadow">
+                        <i class="fa-solid fa-shield-halved text-base"></i>
+                    </div>
+                    <div>
+                        <div class="font-extrabold text-base tracking-tight flex items-center space-x-2">
+                            <span>SmartLink</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 font-semibold border border-indigo-500/30">User &amp; Role Inspector</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400">Database Sandbox: <code class="text-emerald-400">container-deb.ailj.id (access)</code></div>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                    <button @click="showModal = true" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-users-gear"></i>
+                        <span>Modal Picker (Pilih User &amp; Company)</span>
+                    </button>
+
+                    <nav class="flex bg-slate-800 p-1 rounded-lg text-xs font-medium space-x-1">
+                        <a href="/" class="px-3 py-1.5 rounded-md transition bg-indigo-600 text-white shadow">
+                            <i class="fa-solid fa-id-card-clip mr-1.5"></i> User Inspector
+                        </a>
+                        <a href="/matrix" class="px-3 py-1.5 rounded-md transition text-slate-300 hover:text-white">
+                            <i class="fa-solid fa-table-cells mr-1.5"></i> Matrix Grid
+                        </a>
+                        <a href="/endpoints" class="px-3 py-1.5 rounded-md transition text-slate-300 hover:text-white">
+                            <i class="fa-solid fa-route mr-1.5"></i> Endpoints
+                        </a>
+                        <a href="/ui-routes" class="px-3 py-1.5 rounded-md transition text-slate-300 hover:text-white">
+                            <i class="fa-solid fa-compass mr-1.5"></i> UI Routes
+                        </a>
+                    </nav>
+                </div>
+            </div>
+        </header>
+
+        <!-- Quick Test Account Banner -->
+        <section class="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white py-3.5 px-4 border-b border-indigo-700">
+            <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center space-x-3">
+                    <span class="px-2.5 py-1 bg-amber-400 text-amber-950 font-bold text-xs rounded-md shadow-sm">
+                        <i class="fa-solid fa-flask-vial mr-1"></i> AKUN UJI UTAMA
+                    </span>
+                    <div class="text-xs">
+                        <span class="text-slate-300">User:</span> <strong class="text-white">ayaya@yopmail.com</strong>
+                        <span class="mx-2 text-slate-500">|</span>
+                        <span class="text-slate-300">Password:</span> <code class="bg-slate-800 px-1.5 py-0.5 rounded text-amber-300">Aya`1268</code>
+                        <span class="mx-2 text-slate-500">|</span>
+                        <span class="text-slate-300">Perusahaan:</span> <strong class="text-emerald-300">YAY BAKERY</strong>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button @click="selectPresetAyayaYayBakery" class="px-3 py-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold rounded-md transition shadow flex items-center space-x-1.5">
+                        <i class="fa-solid fa-eye"></i>
+                        <span>Inspeksi Akun Ini Sekarang</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="space-y-6">
+                <!-- Inspector Card -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="p-6 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4 bg-slate-50/50">
+                        <div>
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">Hasil Evaluasi Hak Akses &amp; Peran</span>
+                            <h2 class="text-xl font-bold text-slate-900 mt-1">Peran User dalam Perusahaan</h2>
+                            <p class="text-xs text-slate-500">Informasi role, cakupan akses unit, dan status penugasan.</p>
+                        </div>
+                        <button @click="showModal = true" class="px-4 py-2 border border-slate-300 hover:border-indigo-600 hover:text-indigo-600 text-xs font-semibold rounded-lg bg-white shadow-sm transition flex items-center space-x-2">
+                            <i class="fa-solid fa-arrow-right-arrow-left"></i>
+                            <span>Ganti User / Perusahaan</span>
+                        </button>
+                    </div>
+
+                    <div v-if="loading" class="p-12 text-center text-slate-500">
+                        <i class="fa-solid fa-circle-notch fa-spin text-2xl text-indigo-600 mb-2"></i>
+                        <p class="text-xs">Memuat data keanggotaan pengguna...</p>
+                    </div>
+
+                    <div v-else-if="selectedMembership" class="p-6">
+                        <!-- Key Information Grid -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            <!-- User Info -->
+                            <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                                <div class="text-xs text-slate-500 font-semibold mb-1">Pengguna Terpilih</div>
+                                <div class="text-base font-bold text-slate-900 flex items-center space-x-2">
+                                    <i class="fa-solid fa-user-circle text-indigo-600 text-lg"></i>
+                                    <span>{[ selectedMembership.user_name ]}</span>
+                                </div>
+                                <div class="text-xs text-slate-500 mt-1 font-mono">{[ selectedMembership.email ]}</div>
+                                <div class="text-[10px] text-slate-400 mt-2 font-mono">ID: {[ selectedMembership.user_id ]}</div>
+                            </div>
+
+                            <!-- Company Info -->
+                            <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                                <div class="text-xs text-slate-500 font-semibold mb-1">Perusahaan / Usaha</div>
+                                <div class="text-base font-bold text-slate-900 flex items-center space-x-2">
+                                    <i class="fa-solid fa-building text-indigo-600 text-lg"></i>
+                                    <span>{[ selectedMembership.company_name ]}</span>
+                                </div>
+                                <div class="text-xs text-slate-500 mt-1">
+                                    Tipe Bisnis: <span class="capitalize font-semibold text-slate-700">{[ selectedMembership.business_type || 'Retail' ]}</span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 mt-2 font-mono">ID: {[ selectedMembership.company_id ]}</div>
+                            </div>
+
+                            <!-- Role Info Highlight -->
+                            <div class="p-4 rounded-xl bg-indigo-50 border-2 border-indigo-300 shadow-sm">
+                                <div class="text-xs text-indigo-800 font-semibold mb-1">Peran / Role yang Dimiliki</div>
+                                <div class="text-xl font-extrabold text-indigo-950 flex items-center space-x-2">
+                                    <i class="fa-solid fa-crown text-amber-500 text-xl"></i>
+                                    <span>{[ selectedMembership.role_name ]}</span>
+                                </div>
+                                <div class="mt-2 flex items-center space-x-1.5">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800">
+                                        <i class="fa-solid fa-check-circle mr-1"></i> Status: Aktif
+                                    </span>
+                                    <span v-if="selectedMembership.company_access" class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-100 text-blue-800">
+                                        Company Level
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Scoping & Details -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <!-- Scope Box -->
+                            <div class="p-5 rounded-xl border border-slate-200 bg-white">
+                                <h3 class="text-sm font-bold text-slate-900 mb-3 flex items-center space-x-2">
+                                    <i class="fa-solid fa-sliders text-indigo-600"></i>
+                                    <span>Detail Scope Akses Unit &amp; Penugasan</span>
+                                </h3>
+                                <dl class="divide-y divide-slate-100 text-xs">
+                                    <div class="py-2 flex justify-between">
+                                        <dt class="text-slate-500">Akses Level Perusahaan (company_access)</dt>
+                                        <dd class="font-bold font-mono text-emerald-600">
+                                            <i class="fa-solid fa-check mr-1"></i> TRUE (Penuh)
+                                        </dd>
+                                    </div>
+                                    <div class="py-2 flex justify-between">
+                                        <dt class="text-slate-500">Mode Akses Unit (unit_access_mode)</dt>
+                                        <dd class="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                                            {[ selectedMembership.unit_access_mode ]} (Semua Cabang)
+                                        </dd>
+                                    </div>
+                                    <div class="py-2 flex justify-between">
+                                        <dt class="text-slate-500">Otomatis Tambah Unit Baru (auto_assign)</dt>
+                                        <dd class="font-bold text-slate-700">{[ selectedMembership.auto_assign_future_units ? 'Ya (True)' : 'Tidak (False)' ]}</dd>
+                                    </div>
+                                    <div class="py-2 flex justify-between">
+                                        <dt class="text-slate-500">Tanggal Bergabung (joined_at)</dt>
+                                        <dd class="font-mono text-slate-600">{[ selectedMembership.joined_at ]}</dd>
+                                    </div>
+                                    <div class="py-2 flex justify-between">
+                                        <dt class="text-slate-500">Status Pencabutan (revoked_at)</dt>
+                                        <dd class="font-semibold text-emerald-600">Tidak Dicabut (Aktif)</dd>
+                                    </div>
+                                </dl>
+                            </div>
+
+                            <!-- Business Units under Company -->
+                            <div class="p-5 rounded-xl border border-slate-200 bg-white">
+                                <h3 class="text-sm font-bold text-slate-900 mb-3 flex items-center space-x-2">
+                                    <i class="fa-solid fa-store text-indigo-600"></i>
+                                    <span>Unit Usaha / Cabang yang Dapat Diakses ({[ businessUnits.length ]})</span>
+                                </h3>
+                                <div v-if="businessUnits.length" class="space-y-2">
+                                    <div v-for="bu in businessUnits" :key="bu.id" class="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+                                        <div class="flex items-center space-x-2.5">
+                                            <div class="w-7 h-7 rounded bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                                                <i class="fa-solid fa-shop"></i>
+                                            </div>
+                                            <div>
+                                                <div class="font-bold text-slate-800">{[ bu.name ]}</div>
+                                                <div class="text-[10px] text-slate-400 capitalize">Tipe: {[ bu.unit_type ]}</div>
+                                            </div>
+                                        </div>
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 uppercase">
+                                            {[ bu.status ]}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div v-else class="text-xs text-slate-400 italic p-4 text-center bg-slate-50 rounded-lg">
+                                    Karena mode akses adalah <strong>ALL</strong>, seluruh unit bisnis di bawah perusahaan ini otomatis dapat diakses oleh user.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action to view full permissions -->
+                        <div class="mt-8 p-4 rounded-xl bg-slate-900 text-white flex flex-wrap items-center justify-between gap-4">
+                            <div>
+                                <h4 class="font-bold text-sm">Lihat Seluruh Matriks Izin untuk Role "{[ selectedMembership.role_name ]}"</h4>
+                                <p class="text-xs text-slate-400">Jelajahi izin granular pada Kas &amp; Bank, Penjualan, Pembelian, Laporan, dll.</p>
+                            </div>
+                            <a :href="'/matrix?role=' + encodeURIComponent(selectedMembership.role_name)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow transition flex items-center space-x-1.5">
+                                <i class="fa-solid fa-table-cells"></i>
+                                <span>Buka Matriks Role Ini</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- MODAL PICKER (Pilih User & Perusahaan) -->
+        <div v-if="showModal" class="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+                <!-- Modal Header -->
+                <div class="p-5 bg-slate-900 text-white flex items-center justify-between shrink-0">
+                    <div>
+                        <h3 class="font-bold text-base flex items-center space-x-2">
+                            <i class="fa-solid fa-users-gear text-indigo-400"></i>
+                            <span>Modal Picker: Pilih Pengguna &amp; Perusahaan</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">Pilih salah satu keanggotaan untuk memeriksa role dan hak aksesnya.</p>
+                    </div>
+                    <button @click="showModal = false" class="text-slate-400 hover:text-white text-lg p-1">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <!-- Modal Filter Toolbar: Search, Role, and Company -->
+                <div class="p-4 bg-slate-50 border-b border-slate-200 space-y-3 shrink-0">
+                    <!-- Search Input -->
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-sm"></i>
+                        <input v-model="modalSearch" type="text" placeholder="Cari nama user, email, atau nama perusahaan..." 
+                            class="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white shadow-xs">
+                        <button v-if="modalSearch" @click="modalSearch = ''" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs">
+                            <i class="fa-solid fa-circle-xmark"></i>
+                        </button>
+                    </div>
+
+                    <!-- Filter Dropdowns Row: Select2 Searchable Role & Company -->
+                    <div class="flex flex-wrap items-center gap-3 text-xs">
+                        <!-- Select2 Role Filter Dropdown -->
+                        <div class="flex-1 min-w-[200px]">
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Filter Role:</label>
+                            <select v-model="modalRoleFilter" v-select2 class="w-full">
+                                <option value="">Semua Role ({[ availableRoles.length ]})</option>
+                                <option v-for="r in availableRoles" :key="r" :value="r">{[ r ]}</option>
+                            </select>
+                        </div>
+
+                        <!-- Select2 Company Filter Dropdown -->
+                        <div class="flex-1 min-w-[240px]">
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Filter Perusahaan (Company):</label>
+                            <select v-model="modalCompanyFilter" v-select2 class="w-full">
+                                <option value="">Semua Perusahaan ({[ availableCompanies.length ]})</option>
+                                <option v-for="c in availableCompanies" :key="c" :value="c">{[ c ]}</option>
+                            </select>
+                        </div>
+
+                        <!-- Reset Filter Button -->
+                        <div class="self-end pb-0.5" v-if="modalSearch || modalRoleFilter || modalCompanyFilter">
+                            <button @click="resetFilters" class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-semibold transition flex items-center space-x-1 shadow-xs">
+                                <i class="fa-solid fa-rotate-left"></i>
+                                <span>Reset</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Body: Paginated Membership List -->
+                <div class="flex-1 overflow-y-auto p-4 divide-y divide-slate-100">
+                    <div v-if="paginatedMemberships.length > 0" class="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                        <div v-for="m in paginatedMemberships" :key="m.membership_id"
+                            @click="selectMembership(m)"
+                            class="p-3.5 hover:bg-indigo-50/70 cursor-pointer transition flex items-center justify-between group">
+                            <div class="space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-bold text-slate-900 text-sm group-hover:text-indigo-700 transition">{[ m.user_name ]}</span>
+                                    <span class="text-xs text-slate-400 font-mono">({[ m.email ]})</span>
+                                </div>
+                                <div class="text-xs text-slate-600 flex items-center space-x-2">
+                                    <i class="fa-solid fa-building text-slate-400"></i>
+                                    <span class="font-medium text-slate-800">{[ m.company_name ]}</span>
+                                    <span class="text-slate-300">&bull;</span>
+                                    <span class="text-[11px] text-slate-400 capitalize">{[ m.business_type || 'Retail' ]}</span>
+                                </div>
+                            </div>
+                            <div class="text-right flex items-center space-x-3">
+                                <span class="px-2.5 py-1 rounded-full text-xs font-bold" :class="{
+                                    'bg-amber-100 text-amber-900 border border-amber-300': m.role_name === 'Pemilik Usaha',
+                                    'bg-indigo-100 text-indigo-900 border border-indigo-300': m.role_name === 'Administrator Perusahaan',
+                                    'bg-emerald-100 text-emerald-900 border border-emerald-300': m.role_name === 'Admin Keuangan',
+                                    'bg-cyan-100 text-cyan-900 border border-cyan-300': m.role_name === 'Admin Pengadaan',
+                                    'bg-purple-100 text-purple-900 border border-purple-300': m.role_name === 'Sales'
+                                }">
+                                    {[ m.role_name ]}
+                                </span>
+                                <i class="fa-solid fa-chevron-right text-slate-300 group-hover:text-indigo-600 text-xs transition"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else class="text-center py-12 text-slate-400 space-y-2">
+                        <i class="fa-solid fa-folder-open text-3xl text-slate-300"></i>
+                        <p class="text-sm font-medium">Tidak ada data keanggotaan yang sesuai dengan filter.</p>
+                        <button @click="resetFilters" class="text-xs text-indigo-600 hover:underline">Reset semua filter</button>
+                    </div>
+                </div>
+
+                <!-- Modal Footer: Pagination Controls -->
+                <div class="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap justify-between items-center gap-3 text-xs shrink-0">
+                    <div class="flex items-center space-x-3 text-slate-600">
+                        <span>Menampilkan <strong>{[ showingStart ]} - {[ showingEnd ]}</strong> dari <strong>{[ filteredMemberships.length ]}</strong> keanggotaan</span>
+                        <div class="flex items-center space-x-1">
+                            <span class="text-slate-400">|</span>
+                            <span class="text-slate-500">Tampilkan:</span>
+                            <div class="w-24">
+                                <select v-model.number="pageSize" v-select2.nosearch class="w-full">
+                                    <option :value="10">10 / hal</option>
+                                    <option :value="20">20 / hal</option>
+                                    <option :value="50">50 / hal</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <!-- Pagination Buttons -->
+                        <button @click="prevPage" :disabled="currentPage === 1" 
+                            class="px-2.5 py-1 rounded border border-slate-300 font-semibold transition"
+                            :class="currentPage === 1 ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-100'">
+                            <i class="fa-solid fa-chevron-left mr-1"></i> Prev
+                        </button>
+                        <span class="px-2 font-medium text-slate-700">
+                            {[ currentPage ]} / {[ totalPages ]}
+                        </span>
+                        <button @click="nextPage" :disabled="currentPage >= totalPages" 
+                            class="px-2.5 py-1 rounded border border-slate-300 font-semibold transition"
+                            :class="currentPage >= totalPages ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-100'">
+                            Next <i class="fa-solid fa-chevron-right ml-1"></i>
+                        </button>
+                        <button @click="showModal = false" class="ml-2 px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded transition">
+                            Tutup
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
+            Powered by <strong>Goravel</strong> framework &bull; SmartLink GroApp RBAC Role Viewer
+        </footer>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        const select2Directive = {
+            mounted(el, binding) {
+                const $el = $(el);
+                $el.select2({
+                    width: '100%',
+                    dropdownAutoWidth: true,
+                    minimumResultsForSearch: (binding.modifiers && binding.modifiers.nosearch) ? -1 : 0
+                });
+                $el.on('select2:select select2:unselect select2:clear change', function() {
+                    if (el.value !== $el.val()) {
+                        el.value = $el.val();
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+            },
+            updated(el, binding) {
+                const $el = $(el);
+                $el.select2({
+                    width: '100%',
+                    dropdownAutoWidth: true,
+                    minimumResultsForSearch: (binding.modifiers && binding.modifiers.nosearch) ? -1 : 0
+                });
+                if ($el.val() !== el.value) {
+                    $el.val(el.value).trigger('change.select2');
+                }
+            },
+            unmounted(el) {
+                $(el).select2('destroy');
+            }
+        };
+
+        createApp({
+            delimiters: ['{[', ']}'],
+            directives: {
+                select2: select2Directive
+            },
+            data() {
+                return {
+                    loading: true,
+                    showModal: false,
+                    modalSearch: '',
+                    modalRoleFilter: '',
+                    modalCompanyFilter: '',
+                    currentPage: 1,
+                    pageSize: 10,
+                    memberships: [],
+                    selectedMembership: null,
+                    businessUnits: [],
+                };
+            },
+            watch: {
+                modalSearch() { this.currentPage = 1; },
+                modalRoleFilter() { this.currentPage = 1; },
+                modalCompanyFilter() { this.currentPage = 1; },
+                pageSize() { this.currentPage = 1; }
+            },
+            computed: {
+                availableRoles() {
+                    const set = new Set();
+                    for (const m of this.memberships) {
+                        if (m.role_name) set.add(m.role_name);
+                    }
+                    const priority = {
+                        'Pemilik Usaha': 1,
+                        'Administrator Perusahaan': 2,
+                        'Admin Keuangan': 3,
+                        'Admin Pengadaan': 4,
+                        'Sales': 5
+                    };
+                    return Array.from(set).sort((a, b) => {
+                        const pa = priority[a] || 99;
+                        const pb = priority[b] || 99;
+                        if (pa !== pb) return pa - pb;
+                        return a.localeCompare(b);
+                    });
+                },
+                availableCompanies() {
+                    const set = new Set();
+                    for (const m of this.memberships) {
+                        if (m.company_name) set.add(m.company_name);
+                    }
+                    return Array.from(set).sort();
+                },
+                filteredMemberships() {
+                    let list = this.memberships;
+                    if (this.modalRoleFilter) {
+                        list = list.filter(m => m.role_name === this.modalRoleFilter);
+                    }
+                    if (this.modalCompanyFilter) {
+                        list = list.filter(m => m.company_name === this.modalCompanyFilter);
+                    }
+                    if (!this.modalSearch) return list;
+                    const kw = this.modalSearch.toLowerCase();
+                    return list.filter(m => 
+                        (m.user_name && m.user_name.toLowerCase().includes(kw)) ||
+                        (m.email && m.email.toLowerCase().includes(kw)) ||
+                        (m.company_name && m.company_name.toLowerCase().includes(kw)) ||
+                        (m.role_name && m.role_name.toLowerCase().includes(kw))
+                    );
+                },
+                totalPages() {
+                    return Math.ceil(this.filteredMemberships.length / this.pageSize) || 1;
+                },
+                paginatedMemberships() {
+                    const start = (this.currentPage - 1) * this.pageSize;
+                    return this.filteredMemberships.slice(start, start + this.pageSize);
+                },
+                showingStart() {
+                    if (this.filteredMemberships.length === 0) return 0;
+                    return (this.currentPage - 1) * this.pageSize + 1;
+                },
+                showingEnd() {
+                    return Math.min(this.currentPage * this.pageSize, this.filteredMemberships.length);
+                }
+            },
+            methods: {
+                prevPage() {
+                    if (this.currentPage > 1) {
+                        this.currentPage--;
+                    }
+                },
+                nextPage() {
+                    if (this.currentPage < this.totalPages) {
+                        this.currentPage++;
+                    }
+                },
+                resetFilters() {
+                    this.modalSearch = '';
+                    this.modalRoleFilter = '';
+                    this.modalCompanyFilter = '';
+                    this.currentPage = 1;
+                },
+                async init() {
+                    try {
+                        const ucRes = await fetch('/api/v1/rbac/user-companies').then(r => r.json());
+                        this.memberships = ucRes.memberships || [];
+                        this.selectPresetAyayaYayBakery();
+                        this.loading = false;
+                    } catch (err) {
+                        console.error("Init error:", err);
+                        this.loading = false;
+                    }
+                },
+                selectPresetAyayaYayBakery() {
+                    const match = this.memberships.find(m => 
+                        (m.user_name.toLowerCase() === 'ayaya' || m.email === 'ayaya@yopmail.com') &&
+                        m.company_name.toUpperCase() === 'YAY BAKERY'
+                    );
+                    if (match) {
+                        this.selectMembership(match);
+                    } else if (this.memberships.length > 0) {
+                        this.selectMembership(this.memberships[0]);
+                    }
+                },
+                async selectMembership(m) {
+                    this.selectedMembership = m;
+                    this.showModal = false;
+                    try {
+                        const res = await fetch(`/api/v1/rbac/user-role?user_id=${m.user_id}&company_id=${m.company_id}`).then(r => r.json());
+                        this.businessUnits = res.business_units || [];
+                    } catch (e) {
+                        this.businessUnits = [];
+                    }
+                }
+            },
+            mounted() {
+                this.init();
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
+{{ end }}

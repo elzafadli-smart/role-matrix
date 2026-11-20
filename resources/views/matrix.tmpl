@@ -1,0 +1,467 @@
+{{ define "matrix.tmpl" }}
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartLink GroApp - RBAC Matrix Grid</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome 6 Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- jQuery & Select2 -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <style>
+        [v-cloak] { display: none; }
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        .action-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .action-VIEW { background-color: #e0f2fe; color: #0369a1; }
+        .action-CREATE { background-color: #dcfce7; color: #15803d; }
+        .action-UPDATE { background-color: #fef3c7; color: #b45309; }
+        .action-DELETE { background-color: #ffe4e6; color: #be123c; }
+        .action-EXPORT { background-color: #f3e8ff; color: #7e22ce; }
+        .action-PRINT { background-color: #f1f5f9; color: #475569; }
+        .action-VOID { background-color: #fce7f3; color: #be185d; }
+        .action-POST { background-color: #ccfbf1; color: #0f766e; }
+
+        /* Modern Select2 Styling */
+        .select2-container .select2-selection--single {
+            height: 36px !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 0.5rem !important;
+            padding: 3px 8px !important;
+            display: flex !important;
+            align-items: center !important;
+            background-color: #ffffff !important;
+            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            color: #1e293b !important;
+            font-size: 0.8125rem !important;
+            line-height: 1.25rem !important;
+            padding-left: 2px !important;
+            padding-right: 20px !important;
+            font-weight: 500 !important;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 34px !important;
+            right: 6px !important;
+        }
+        .select2-container--default.select2-container--focus .select2-selection--single,
+        .select2-container--default.select2-container--open .select2-selection--single {
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+            outline: none !important;
+        }
+        .select2-dropdown {
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 0.75rem !important;
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1) !important;
+            overflow: hidden !important;
+            font-size: 0.8125rem !important;
+            z-index: 99999 !important;
+            background-color: #ffffff !important;
+        }
+        .select2-search--dropdown {
+            padding: 8px !important;
+            background-color: #f8fafc !important;
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+        .select2-search--dropdown .select2-search__field {
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 0.5rem !important;
+            padding: 6px 10px !important;
+            outline: none !important;
+            font-size: 0.8125rem !important;
+            width: 100% !important;
+            background-color: #ffffff !important;
+        }
+        .select2-search--dropdown .select2-search__field:focus {
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+        }
+        .select2-results__option {
+            padding: 8px 12px !important;
+            font-size: 0.8125rem !important;
+            color: #334155 !important;
+        }
+        .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+            background-color: #4f46e5 !important;
+            color: #ffffff !important;
+        }
+        .select2-container--default .select2-results__option--selected {
+            background-color: #e0e7ff !important;
+            color: #3730a3 !important;
+            font-weight: 600 !important;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+    <div id="app" v-cloak class="flex flex-col min-h-screen">
+        <!-- Top Navigation Bar -->
+        <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-40 border-b border-slate-800">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white shadow">
+                        <i class="fa-solid fa-table-cells text-base"></i>
+                    </div>
+                    <div>
+                        <div class="font-extrabold text-base tracking-tight flex items-center space-x-2">
+                            <span>SmartLink</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 font-semibold border border-indigo-500/30">RBAC Matrix Grid</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400">Hierarki: <code class="text-indigo-300">Application &rarr; Module &rarr; Feature &rarr; Action &rarr; Role Matrix</code></div>
+                    </div>
+                </div>
+
+                <nav class="flex bg-slate-800 p-1 rounded-lg text-xs font-medium space-x-1">
+                    <a href="/" class="px-3 py-1.5 rounded-md transition text-slate-300 hover:text-white">
+                        <i class="fa-solid fa-id-card-clip mr-1.5"></i> User Inspector
+                    </a>
+                    <a href="/matrix" class="px-3 py-1.5 rounded-md transition bg-indigo-600 text-white shadow">
+                        <i class="fa-solid fa-table-cells mr-1.5"></i> Matrix Grid
+                    </a>
+                    <a href="/endpoints" class="px-3 py-1.5 rounded-md transition text-slate-300 hover:text-white">
+                        <i class="fa-solid fa-route mr-1.5"></i> Endpoints
+                    </a>
+                    <a href="/ui-routes" class="px-3 py-1.5 rounded-md transition text-slate-300 hover:text-white">
+                        <i class="fa-solid fa-compass mr-1.5"></i> UI Routes
+                    </a>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="space-y-4">
+                <!-- Search & Filter Bar -->
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center space-x-3 flex-1 min-w-[260px]">
+                        <div class="relative w-full">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-sm"></i>
+                            <input v-model="searchKeyword" type="text" placeholder="Cari module, feature, action..." 
+                                class="w-full pl-9 pr-4 py-1.5 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <!-- Application Dropdown -->
+                        <div class="min-w-[190px]">
+                            <select v-model="selectedApp" @change="onAppChange" v-select2 class="w-full">
+                                <option value="">Semua Aplikasi</option>
+                                <option v-for="app in applications" :key="app.code" :value="app.code">{[ app.name ]}</option>
+                            </select>
+                        </div>
+
+                        <!-- Module Dropdown Picker -->
+                        <div class="min-w-[220px] max-w-[280px]">
+                            <select v-model="selectedModule" v-select2 class="w-full">
+                                <option value="">Semua Module (Accordion)</option>
+                                <option v-for="m in availableModules" :key="m.code" :value="m.code">
+                                    {[ m.code ]} ({[ m.featureCount ]} fitur)
+                                </option>
+                            </select>
+                        </div>
+
+                        <!-- Role Filter Dropdown -->
+                        <div class="min-w-[170px]">
+                            <select v-model="filterRole" v-select2 class="w-full">
+                                <option value="">Semua Role</option>
+                                <option v-for="r in roles" :key="r" :value="r">{[ r ]}</option>
+                            </select>
+                        </div>
+
+                        <!-- Accordion Action Buttons -->
+                        <div class="flex items-center border border-slate-300 rounded-lg overflow-hidden bg-slate-50">
+                            <button @click="expandAllModules" type="button" title="Buka Semua Module (Expand All)" class="px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-indigo-600 hover:bg-slate-100 transition border-r border-slate-300 flex items-center space-x-1">
+                                <i class="fa-solid fa-angles-down text-[11px]"></i>
+                                <span>Buka Semua</span>
+                            </button>
+                            <button @click="collapseAllModules" type="button" title="Tutup Semua Module (Collapse All)" class="px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-indigo-600 hover:bg-slate-100 transition flex items-center space-x-1">
+                                <i class="fa-solid fa-angles-up text-[11px]"></i>
+                                <span>Tutup Semua</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="loading" class="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center text-slate-500">
+                    <i class="fa-solid fa-circle-notch fa-spin text-2xl text-indigo-600 mb-2"></i>
+                    <p class="text-xs">Memuat matriks perizinan RBAC...</p>
+                </div>
+
+                <!-- Matrix Table with Sticky Header & Accordion Modules -->
+                <div v-else class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="overflow-auto max-h-[calc(100vh-210px)]">
+                        <table class="w-full text-left text-sm border-collapse">
+                            <thead class="sticky top-0 z-20 bg-slate-900 shadow-md border-b-2 border-indigo-500">
+                                <tr class="bg-slate-900 text-slate-200 text-xs uppercase tracking-wider font-bold">
+                                    <th class="sticky top-0 z-20 bg-slate-900 py-3.5 px-4 w-1/4 text-white shadow-xs">Module &amp; Feature</th>
+                                    <th class="sticky top-0 z-20 bg-slate-900 py-3.5 px-3 w-28 text-white shadow-xs">Action</th>
+                                    <th v-for="role in roles" :key="role" class="sticky top-0 z-20 bg-slate-900 py-3.5 px-3 text-center shadow-xs transition"
+                                        :class="filterRole === role ? 'bg-indigo-950 text-amber-300 border-x-2 border-indigo-500 font-extrabold shadow-inner' : 'text-slate-200'">
+                                        {[ role ]}
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <template v-for="app in filteredApplications" :key="app.code">
+                                    <!-- App Group Header -->
+                                    <tr class="bg-slate-800 text-white font-semibold border-y border-slate-700">
+                                        <td :colspan="2 + roles.length" class="py-2.5 px-4 text-xs tracking-wide">
+                                            <i class="fa-solid fa-layer-group mr-2 text-indigo-400"></i> {[ app.name ]}
+                                        </td>
+                                    </tr>
+
+                                    <!-- Module Accordion Header Rows -->
+                                    <template v-for="mod in app.modules" :key="mod.code">
+                                        <tr @click="toggleModule(app.code, mod.code)" 
+                                            class="cursor-pointer select-none transition border-t border-slate-200"
+                                            :class="isModuleOpen(app.code, mod.code) ? 'bg-indigo-50/70 hover:bg-indigo-100/70 text-indigo-950' : 'bg-slate-50 hover:bg-slate-100/80 text-slate-700'">
+                                            <td :colspan="2 + roles.length" class="py-2.5 px-4 text-xs">
+                                                <div class="flex items-center justify-between">
+                                                    <div class="flex items-center space-x-2.5">
+                                                        <span class="w-4 text-center text-indigo-600 transition-transform">
+                                                            <i class="fa-solid" 
+                                                               :class="isModuleOpen(app.code, mod.code) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+                                                        </span>
+                                                        <i class="fa-solid text-slate-400"
+                                                           :class="isModuleOpen(app.code, mod.code) ? 'fa-folder-open text-indigo-600' : 'fa-folder'"></i>
+                                                        <span class="font-medium">Module: <strong class="font-bold text-slate-900">{[ mod.code ]}</strong></span>
+                                                    </div>
+                                                    <div class="flex items-center space-x-2 text-[11px]">
+                                                        <span class="px-2 py-0.5 rounded-full font-semibold border"
+                                                              :class="isModuleOpen(app.code, mod.code) ? 'bg-indigo-100 border-indigo-200 text-indigo-900' : 'bg-slate-200/70 border-slate-300 text-slate-600'">
+                                                            {[ mod.features.length ]} Fitur &bull; {[ getModuleActionCount(mod) ]} Aksi
+                                                        </span>
+                                                        <span class="text-[11px] text-slate-400 font-normal">
+                                                            {[ isModuleOpen(app.code, mod.code) ? '(klik untuk ciutkan)' : '(klik untuk buka)' ]}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+
+                                        <!-- Collapsible Feature & Action Rows -->
+                                        <template v-if="isModuleOpen(app.code, mod.code)">
+                                            <template v-for="feat in mod.features" :key="feat.code">
+                                                <tr v-for="(act, idx) in feat.actions" :key="act.action" class="hover:bg-slate-50/80 transition">
+                                                    <td class="py-2 px-4 text-xs text-slate-700 font-mono">
+                                                        <span v-if="idx === 0" class="flex items-center space-x-1.5 pl-6">
+                                                            <i class="fa-regular fa-file-code text-slate-400"></i>
+                                                            <span class="font-bold text-slate-900">{[ feat.code ]}</span>
+                                                        </span>
+                                                    </td>
+                                                    <td class="py-2 px-3">
+                                                        <span class="action-chip" :class="'action-' + act.action">{[ act.action ]}</span>
+                                                    </td>
+                                                    <td v-for="role in roles" :key="role" class="py-2 px-3 text-center"
+                                                        :class="filterRole === role ? 'bg-indigo-50/50 border-x border-indigo-100' : ''">
+                                                        <span v-if="act.roles[role]" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs">
+                                                            <i class="fa-solid fa-check"></i>
+                                                        </span>
+                                                        <span v-else class="inline-block w-2 h-0.5 bg-slate-200 rounded"></span>
+                                                    </td>
+                                                </tr>
+                                            </template>
+                                        </template>
+                                    </template>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
+            Powered by <strong>Goravel</strong> framework &bull; SmartLink GroApp RBAC Role Viewer
+        </footer>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        const select2Directive = {
+            mounted(el, binding) {
+                const $el = $(el);
+                $el.select2({
+                    width: '100%',
+                    dropdownAutoWidth: true,
+                    minimumResultsForSearch: (binding.modifiers && binding.modifiers.nosearch) ? -1 : 0
+                });
+                $el.on('select2:select select2:unselect select2:clear change', function() {
+                    if (el.value !== $el.val()) {
+                        el.value = $el.val();
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+            },
+            updated(el, binding) {
+                const $el = $(el);
+                $el.select2({
+                    width: '100%',
+                    dropdownAutoWidth: true,
+                    minimumResultsForSearch: (binding.modifiers && binding.modifiers.nosearch) ? -1 : 0
+                });
+                if ($el.val() !== el.value) {
+                    $el.val(el.value).trigger('change.select2');
+                }
+            },
+            unmounted(el) {
+                $(el).select2('destroy');
+            }
+        };
+
+        createApp({
+            delimiters: ['{[', ']}'],
+            directives: {
+                select2: select2Directive
+            },
+            data() {
+                return {
+                    loading: true,
+                    roles: [],
+                    applications: [],
+                    searchKeyword: '',
+                    selectedApp: '',
+                    selectedModule: '',
+                    expandedModules: {},
+                    filterRole: '',
+                };
+            },
+            computed: {
+                availableModules() {
+                    const list = [];
+                    const seen = new Set();
+                    let apps = this.applications;
+                    if (this.selectedApp) {
+                        apps = apps.filter(a => a.code === this.selectedApp);
+                    }
+                    for (const app of apps) {
+                        for (const mod of (app.modules || [])) {
+                            if (!seen.has(mod.code)) {
+                                seen.add(mod.code);
+                                list.push({
+                                    code: mod.code,
+                                    appCode: app.code,
+                                    featureCount: (mod.features || []).length
+                                });
+                            }
+                        }
+                    }
+                    return list;
+                },
+                filteredApplications() {
+                    let apps = this.applications;
+                    if (this.selectedApp) {
+                        apps = apps.filter(a => a.code === this.selectedApp);
+                    }
+                    if (this.selectedModule) {
+                        apps = apps.map(app => {
+                            const matched = (app.modules || []).filter(m => m.code === this.selectedModule);
+                            return { ...app, modules: matched };
+                        }).filter(app => app.modules.length > 0);
+                    }
+                    if (!this.searchKeyword) return apps;
+
+                    const kw = this.searchKeyword.toLowerCase();
+                    return apps.map(app => {
+                        const filteredModules = (app.modules || []).map(mod => {
+                            const filteredFeatures = (mod.features || []).map(feat => {
+                                const matchedActions = (feat.actions || []).filter(act => {
+                                    return act.action.toLowerCase().includes(kw) ||
+                                           feat.code.toLowerCase().includes(kw) ||
+                                           mod.code.toLowerCase().includes(kw);
+                                });
+                                return { ...feat, actions: matchedActions };
+                            }).filter(feat => feat.actions.length > 0);
+                            return { ...mod, features: filteredFeatures };
+                        }).filter(mod => mod.features.length > 0);
+                        return { ...app, modules: filteredModules };
+                    }).filter(app => app.modules.length > 0);
+                }
+            },
+            methods: {
+                isModuleOpen(appCode, modCode) {
+                    if (this.searchKeyword || this.selectedModule) return true;
+                    const key = appCode + ':' + modCode;
+                    return !!this.expandedModules[key];
+                },
+                toggleModule(appCode, modCode) {
+                    const key = appCode + ':' + modCode;
+                    this.expandedModules[key] = !this.expandedModules[key];
+                    this.expandedModules = { ...this.expandedModules };
+                },
+                expandAllModules() {
+                    const next = {};
+                    for (const app of this.applications) {
+                        for (const mod of (app.modules || [])) {
+                            next[app.code + ':' + mod.code] = true;
+                        }
+                    }
+                    this.expandedModules = next;
+                },
+                onAppChange() {
+                    this.selectedModule = '';
+                },
+                collapseAllModules() {
+                    this.expandedModules = {};
+                },
+                getModuleActionCount(mod) {
+                    if (!mod || !mod.features) return 0;
+                    return mod.features.reduce((acc, feat) => acc + (feat.actions ? feat.actions.length : 0), 0);
+                },
+                async init() {
+                    try {
+                        const matRes = await fetch('/api/v1/rbac/matrix').then(r => r.json());
+                        this.roles = matRes.roles || [];
+                        this.applications = matRes.applications || [];
+
+                        // Read ?role=... from URL query if present
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const roleParam = urlParams.get('role');
+                        if (roleParam && this.roles.includes(roleParam)) {
+                            this.filterRole = roleParam;
+                            this.expandAllModules();
+                        } else if (this.applications.length > 0 && this.applications[0].modules && this.applications[0].modules.length > 0) {
+                            // Expand first module by default
+                            const firstApp = this.applications[0];
+                            const firstMod = firstApp.modules[0];
+                            this.expandedModules = {
+                                [firstApp.code + ':' + firstMod.code]: true
+                            };
+                        }
+                        this.loading = false;
+                    } catch (err) {
+                        console.error("Init error:", err);
+                        this.loading = false;
+                    }
+                }
+            },
+            mounted() {
+                this.init();
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
+{{ end }}
