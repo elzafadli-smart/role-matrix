@@ -1,9 +1,9 @@
 package services
 
 import (
+	"fmt"
 	"sort"
 	"sync"
-	"time"
 
 	"goravel/app/facades"
 	"goravel/app/models"
@@ -55,16 +55,7 @@ type ActionMatrixNode struct {
 	PermissionKey   string          `json:"permission_key"`
 }
 
-type RbacMatrixService struct {
-	parser          *RbacParserService
-	mu              sync.RWMutex
-	cachedMatrix    *MatrixResponse
-	cachedEndpoints []map[string]any
-	cachedUiRoutes  []map[string]any
-	matrixCachedAt  time.Time
-	epCachedAt      time.Time
-	urCachedAt      time.Time
-}
+type RbacMatrixService struct{}
 
 var (
 	matrixServiceInstance *RbacMatrixService
@@ -73,55 +64,28 @@ var (
 
 func NewRbacMatrixService() *RbacMatrixService {
 	matrixOnce.Do(func() {
-		matrixServiceInstance = &RbacMatrixService{
-			parser: GetRbacParser(),
-		}
+		matrixServiceInstance = &RbacMatrixService{}
 	})
 	return matrixServiceInstance
 }
 
 func (s *RbacMatrixService) BuildMatrix() (*MatrixResponse, error) {
-	s.mu.RLock()
-	if s.cachedMatrix != nil && time.Since(s.matrixCachedAt) < 10*time.Minute {
-		res := s.cachedMatrix
-		s.mu.RUnlock()
-		return res, nil
-	}
-	s.mu.RUnlock()
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.cachedMatrix != nil && time.Since(s.matrixCachedAt) < 10*time.Minute {
-		return s.cachedMatrix, nil
-	}
-
-	// First priority: Try fetching live data from database via Goravel ORM
-	if res, err := s.buildMatrixFromDb(); err == nil && res != nil && len(res.Applications) > 0 {
-		s.cachedMatrix = res
-		s.matrixCachedAt = time.Now()
-		return res, nil
-	}
-
-	// Fallback to parsed SQL seeders
-	res, err := s.buildMatrixFromParser()
-	if err == nil && res != nil {
-		s.cachedMatrix = res
-		s.matrixCachedAt = time.Now()
-	}
-	return res, err
+	return s.buildMatrixFromDb()
 }
 
 func (s *RbacMatrixService) buildMatrixFromDb() (*MatrixResponse, error) {
 	orm := facades.Orm()
 	if orm == nil {
-		return nil, nil
+		return nil, fmt.Errorf("database connection not initialized")
 	}
 
 	// 1. Fetch Master Entities
 	var apps []models.Application
-	if err := orm.Query().Order("code asc").Find(&apps); err != nil || len(apps) == 0 {
+	if err := orm.Query().Order("code asc").Find(&apps); err != nil {
 		return nil, err
+	}
+	if len(apps) == 0 {
+		return nil, fmt.Errorf("no applications found in database")
 	}
 
 	var modules []models.Module
@@ -318,393 +282,185 @@ func (s *RbacMatrixService) buildMatrixFromDb() (*MatrixResponse, error) {
 	}, nil
 }
 
-func (s *RbacMatrixService) buildMatrixFromParser() (*MatrixResponse, error) {
-	data, err := s.parser.GetData()
-	if err != nil {
-		return nil, err
-	}
-
-	roleNames := []string{
-		"Pemilik Usaha",
-		"Administrator Perusahaan",
-		"Admin Keuangan",
-		"Admin Pengadaan",
-		"Sales",
-	}
-
-	endpointsMap := make(map[string][]string)
-	for _, ep := range data.ApiEndpoints {
-		key := ep.ModuleCode + ":" + ep.FeatureCode + ":" + ep.ActionCode
-		endpointsMap[key] = append(endpointsMap[key], ep.Method+" "+ep.Path+" ("+ep.ServiceName+")")
-	}
-
-	uiRoutesMap := make(map[string][]string)
-	for _, ur := range data.UiRoutes {
-		key := ur.ModuleCode + ":" + ur.FeatureCode + ":" + ur.ActionCode
-		uiRoutesMap[key] = append(uiRoutesMap[key], ur.Permission)
-	}
-
-	appModules := make(map[string]map[string]map[string][]string)
-
-	for _, fa := range data.FeatureActions {
-		app := fa.AppCode
-		if app == "" {
-			app = "GROAPP_ACCOUNTING"
-		}
-		if _, ok := appModules[app]; !ok {
-			appModules[app] = make(map[string]map[string][]string)
-		}
-		if _, ok := appModules[app][fa.ModuleCode]; !ok {
-			appModules[app][fa.ModuleCode] = make(map[string][]string)
-		}
-
-		actions := appModules[app][fa.ModuleCode][fa.Feature]
-		exists := false
-		for _, a := range actions {
-			if a == fa.Action {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			appModules[app][fa.ModuleCode][fa.Feature] = append(actions, fa.Action)
-		}
-	}
-
-	totalFeatureActions := len(data.FeatureActions)
-	totalFeatures := 0
-	totalModules := 0
-
-	var appNodes []AppMatrixNode
-	for appCode, modules := range appModules {
-		totalModules += len(modules)
-		var moduleNodes []ModuleMatrixNode
-
-		for modCode, features := range modules {
-			totalFeatures += len(features)
-			var featNodes []FeatureMatrixNode
-
-			for featCode, actions := range features {
-				featKey := modCode + ":" + featCode
-				isAction := false
-				if featEntry, ok := data.Features[featKey]; ok {
-					isAction = featEntry.IsActionFeature
-				}
-
-				sort.Strings(actions)
-
-				var actionNodes []ActionMatrixNode
-				for _, act := range actions {
-					faKey := modCode + ":" + featCode + ":" + act
-
-					rolesMap := make(map[string]bool)
-					for _, r := range roleNames {
-						hasPerm := false
-						for _, grantedKey := range data.RolePermissions[r] {
-							if grantedKey == faKey {
-								hasPerm = true
-								break
-							}
-						}
-						rolesMap[r] = hasPerm
-					}
-
-					actionNodes = append(actionNodes, ActionMatrixNode{
-						Action:        act,
-						Roles:         rolesMap,
-						Endpoints:     endpointsMap[faKey],
-						UiRoutes:      uiRoutesMap[faKey],
-						PermissionKey: faKey,
-					})
-				}
-
-				featNodes = append(featNodes, FeatureMatrixNode{
-					Code:            featCode,
-					IsActionFeature: isAction,
-					Actions:         actionNodes,
-				})
-			}
-
-			moduleNodes = append(moduleNodes, ModuleMatrixNode{
-				Code:     modCode,
-				Features: featNodes,
-			})
-		}
-
-		appName := data.Applications[appCode]
-		if appName == "" {
-			appName = appCode
-		}
-
-		appNodes = append(appNodes, AppMatrixNode{
-			Code:    appCode,
-			Name:    appName,
-			Modules: moduleNodes,
-		})
-	}
-
-	stats := MatrixStats{
-		TotalApplications:   len(appNodes),
-		TotalModules:        totalModules,
-		TotalFeatures:       totalFeatures,
-		TotalFeatureActions: totalFeatureActions,
-		TotalEndpoints:      len(data.ApiEndpoints),
-		TotalUiRoutes:       len(data.UiRoutes),
-	}
-
-	return &MatrixResponse{
-		Roles:        roleNames,
-		Applications: appNodes,
-		Stats:        stats,
-		Source:       "seeder_sql",
-	}, nil
-}
-
 func (s *RbacMatrixService) GetEndpointsWithRoles() ([]map[string]any, error) {
-	s.mu.RLock()
-	if s.cachedEndpoints != nil && time.Since(s.epCachedAt) < 10*time.Minute {
-		res := s.cachedEndpoints
-		s.mu.RUnlock()
-		return res, nil
-	}
-	s.mu.RUnlock()
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.cachedEndpoints != nil && time.Since(s.epCachedAt) < 10*time.Minute {
-		return s.cachedEndpoints, nil
-	}
-
 	orm := facades.Orm()
-	if orm != nil {
-		var endpoints []models.ApiEndpoint
-		if err := orm.Query().Find(&endpoints); err == nil && len(endpoints) > 0 {
-			var featureActions []models.FeatureAction
-			_ = orm.Query().Find(&featureActions)
-			faMap := make(map[string]models.FeatureAction)
-			for _, fa := range featureActions {
-				faMap[fa.ID] = fa
-			}
-
-			var features []models.Feature
-			_ = orm.Query().Find(&features)
-			featMap := make(map[string]models.Feature)
-			for _, f := range features {
-				featMap[f.ID] = f
-			}
-
-			var modules []models.Module
-			_ = orm.Query().Find(&modules)
-			modMap := make(map[string]models.Module)
-			for _, m := range modules {
-				modMap[m.ID] = m
-			}
-
-			var actions []models.Action
-			_ = orm.Query().Find(&actions)
-			actMap := make(map[string]string)
-			for _, a := range actions {
-				actMap[a.ID] = a.Code
-			}
-
-			var roles []models.Role
-			_ = orm.Query().Find(&roles)
-
-			var rolePerms []models.RolePermission
-			_ = orm.Query().Find(&rolePerms)
-			rolePermMap := make(map[string][]string) // fa.id -> []roleName
-			for _, rp := range rolePerms {
-				for _, r := range roles {
-					if r.ID == rp.RoleID {
-						rolePermMap[rp.FeatureActionID] = append(rolePermMap[rp.FeatureActionID], r.Name)
-					}
-				}
-			}
-
-			for faID := range rolePermMap {
-				sortRoleNames(rolePermMap[faID])
-			}
-
-			var results []map[string]any
-			for _, ep := range endpoints {
-				fa := faMap[ep.FeatureActionID]
-				feat := featMap[fa.FeatureID]
-				mod := modMap[feat.ModuleID]
-				act := actMap[fa.ActionID]
-
-				results = append(results, map[string]any{
-					"method":           ep.Method,
-					"path":             ep.Path,
-					"service_name":     ep.ServiceName,
-					"module":           mod.Code,
-					"feature":          feat.Code,
-					"action":           act,
-					"description":      ep.Description,
-					"authorized_roles": rolePermMap[ep.FeatureActionID],
-				})
-			}
-			s.cachedEndpoints = results
-			s.epCachedAt = time.Now()
-			return results, nil
-		}
+	if orm == nil {
+		return nil, fmt.Errorf("database connection not initialized")
 	}
 
-	// Fallback to parser
-	data, err := s.parser.GetData()
-	if err != nil {
+	var endpoints []models.ApiEndpoint
+	if err := orm.Query().Find(&endpoints); err != nil {
 		return nil, err
 	}
 
-	roleNames := []string{"Pemilik Usaha", "Administrator Perusahaan", "Admin Keuangan", "Admin Pengadaan", "Sales"}
-	var results []map[string]any
-	for _, ep := range data.ApiEndpoints {
-		faKey := ep.ModuleCode + ":" + ep.FeatureCode + ":" + ep.ActionCode
-		var authorizedRoles []string
-		for _, r := range roleNames {
-			for _, p := range data.RolePermissions[r] {
-				if p == faKey {
-					authorizedRoles = append(authorizedRoles, r)
-					break
-				}
-			}
+	var featureActions []models.FeatureAction
+	if err := orm.Query().Find(&featureActions); err != nil {
+		return nil, err
+	}
+	faMap := make(map[string]models.FeatureAction)
+	for _, fa := range featureActions {
+		faMap[fa.ID] = fa
+	}
+
+	var features []models.Feature
+	if err := orm.Query().Find(&features); err != nil {
+		return nil, err
+	}
+	featMap := make(map[string]models.Feature)
+	for _, f := range features {
+		featMap[f.ID] = f
+	}
+
+	var modules []models.Module
+	if err := orm.Query().Find(&modules); err != nil {
+		return nil, err
+	}
+	modMap := make(map[string]models.Module)
+	for _, m := range modules {
+		modMap[m.ID] = m
+	}
+
+	var actions []models.Action
+	if err := orm.Query().Find(&actions); err != nil {
+		return nil, err
+	}
+	actMap := make(map[string]string)
+	for _, a := range actions {
+		actMap[a.ID] = a.Code
+	}
+
+	var roles []models.Role
+	if err := orm.Query().Find(&roles); err != nil {
+		return nil, err
+	}
+	roleMap := make(map[string]string)
+	for _, r := range roles {
+		roleMap[r.ID] = r.Name
+	}
+
+	var rolePerms []models.RolePermission
+	if err := orm.Query().Find(&rolePerms); err != nil {
+		return nil, err
+	}
+	rolePermMap := make(map[string][]string)
+	for _, rp := range rolePerms {
+		if rName, ok := roleMap[rp.RoleID]; ok {
+			rolePermMap[rp.FeatureActionID] = append(rolePermMap[rp.FeatureActionID], rName)
 		}
+	}
+
+	for faID := range rolePermMap {
+		sortRoleNames(rolePermMap[faID])
+	}
+
+	var results []map[string]any
+	for _, ep := range endpoints {
+		fa := faMap[ep.FeatureActionID]
+		feat := featMap[fa.FeatureID]
+		mod := modMap[feat.ModuleID]
+		act := actMap[fa.ActionID]
 
 		results = append(results, map[string]any{
 			"method":           ep.Method,
 			"path":             ep.Path,
 			"service_name":     ep.ServiceName,
-			"module":           ep.ModuleCode,
-			"feature":          ep.FeatureCode,
-			"action":           ep.ActionCode,
+			"module":           mod.Code,
+			"feature":          feat.Code,
+			"action":           act,
 			"description":      ep.Description,
-			"authorized_roles": authorizedRoles,
+			"authorized_roles": rolePermMap[ep.FeatureActionID],
 		})
 	}
-	s.cachedEndpoints = results
-	s.epCachedAt = time.Now()
 	return results, nil
 }
 
 func (s *RbacMatrixService) GetUiRoutesWithRoles() ([]map[string]any, error) {
-	s.mu.RLock()
-	if s.cachedUiRoutes != nil && time.Since(s.urCachedAt) < 10*time.Minute {
-		res := s.cachedUiRoutes
-		s.mu.RUnlock()
-		return res, nil
-	}
-	s.mu.RUnlock()
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.cachedUiRoutes != nil && time.Since(s.urCachedAt) < 10*time.Minute {
-		return s.cachedUiRoutes, nil
-	}
-
 	orm := facades.Orm()
-	if orm != nil {
-		var uiRoutes []models.UiRoute
-		if err := orm.Query().Find(&uiRoutes); err == nil && len(uiRoutes) > 0 {
-			var featureActions []models.FeatureAction
-			_ = orm.Query().Find(&featureActions)
-			faMap := make(map[string]models.FeatureAction)
-			for _, fa := range featureActions {
-				faMap[fa.ID] = fa
-			}
-
-			var features []models.Feature
-			_ = orm.Query().Find(&features)
-			featMap := make(map[string]models.Feature)
-			for _, f := range features {
-				featMap[f.ID] = f
-			}
-
-			var modules []models.Module
-			_ = orm.Query().Find(&modules)
-			modMap := make(map[string]models.Module)
-			for _, m := range modules {
-				modMap[m.ID] = m
-			}
-
-			var actions []models.Action
-			_ = orm.Query().Find(&actions)
-			actMap := make(map[string]string)
-			for _, a := range actions {
-				actMap[a.ID] = a.Code
-			}
-
-			var roles []models.Role
-			_ = orm.Query().Find(&roles)
-
-			var rolePerms []models.RolePermission
-			_ = orm.Query().Find(&rolePerms)
-			rolePermMap := make(map[string][]string) // fa.id -> []roleName
-			for _, rp := range rolePerms {
-				for _, r := range roles {
-					if r.ID == rp.RoleID {
-						rolePermMap[rp.FeatureActionID] = append(rolePermMap[rp.FeatureActionID], r.Name)
-					}
-				}
-			}
-
-			for faID := range rolePermMap {
-				sortRoleNames(rolePermMap[faID])
-			}
-
-			var results []map[string]any
-			for _, ur := range uiRoutes {
-				fa := faMap[ur.FeatureActionID]
-				feat := featMap[fa.FeatureID]
-				mod := modMap[feat.ModuleID]
-				act := actMap[fa.ActionID]
-
-				results = append(results, map[string]any{
-					"permission":       ur.Permission,
-					"module":           mod.Code,
-					"feature":          feat.Code,
-					"action":           act,
-					"description":      ur.Description,
-					"authorized_roles": rolePermMap[ur.FeatureActionID],
-				})
-			}
-			s.cachedUiRoutes = results
-			s.urCachedAt = time.Now()
-			return results, nil
-		}
+	if orm == nil {
+		return nil, fmt.Errorf("database connection not initialized")
 	}
 
-	// Fallback to parser
-	data, err := s.parser.GetData()
-	if err != nil {
+	var uiRoutes []models.UiRoute
+	if err := orm.Query().Find(&uiRoutes); err != nil {
 		return nil, err
 	}
 
-	roleNames := []string{"Pemilik Usaha", "Administrator Perusahaan", "Admin Keuangan", "Admin Pengadaan", "Sales"}
-	var results []map[string]any
-	for _, ur := range data.UiRoutes {
-		faKey := ur.ModuleCode + ":" + ur.FeatureCode + ":" + ur.ActionCode
-		var authorizedRoles []string
-		for _, r := range roleNames {
-			for _, p := range data.RolePermissions[r] {
-				if p == faKey {
-					authorizedRoles = append(authorizedRoles, r)
-					break
-				}
-			}
+	var featureActions []models.FeatureAction
+	if err := orm.Query().Find(&featureActions); err != nil {
+		return nil, err
+	}
+	faMap := make(map[string]models.FeatureAction)
+	for _, fa := range featureActions {
+		faMap[fa.ID] = fa
+	}
+
+	var features []models.Feature
+	if err := orm.Query().Find(&features); err != nil {
+		return nil, err
+	}
+	featMap := make(map[string]models.Feature)
+	for _, f := range features {
+		featMap[f.ID] = f
+	}
+
+	var modules []models.Module
+	if err := orm.Query().Find(&modules); err != nil {
+		return nil, err
+	}
+	modMap := make(map[string]models.Module)
+	for _, m := range modules {
+		modMap[m.ID] = m
+	}
+
+	var actions []models.Action
+	if err := orm.Query().Find(&actions); err != nil {
+		return nil, err
+	}
+	actMap := make(map[string]string)
+	for _, a := range actions {
+		actMap[a.ID] = a.Code
+	}
+
+	var roles []models.Role
+	if err := orm.Query().Find(&roles); err != nil {
+		return nil, err
+	}
+	roleMap := make(map[string]string)
+	for _, r := range roles {
+		roleMap[r.ID] = r.Name
+	}
+
+	var rolePerms []models.RolePermission
+	if err := orm.Query().Find(&rolePerms); err != nil {
+		return nil, err
+	}
+	rolePermMap := make(map[string][]string)
+	for _, rp := range rolePerms {
+		if rName, ok := roleMap[rp.RoleID]; ok {
+			rolePermMap[rp.FeatureActionID] = append(rolePermMap[rp.FeatureActionID], rName)
 		}
+	}
+
+	for faID := range rolePermMap {
+		sortRoleNames(rolePermMap[faID])
+	}
+
+	var results []map[string]any
+	for _, ur := range uiRoutes {
+		fa := faMap[ur.FeatureActionID]
+		feat := featMap[fa.FeatureID]
+		mod := modMap[feat.ModuleID]
+		act := actMap[fa.ActionID]
 
 		results = append(results, map[string]any{
 			"permission":       ur.Permission,
-			"module":           ur.ModuleCode,
-			"feature":          ur.FeatureCode,
-			"action":           ur.ActionCode,
+			"module":           mod.Code,
+			"feature":          feat.Code,
+			"action":           act,
 			"description":      ur.Description,
-			"authorized_roles": authorizedRoles,
+			"authorized_roles": rolePermMap[ur.FeatureActionID],
 		})
 	}
-	s.cachedUiRoutes = results
-	s.urCachedAt = time.Now()
 	return results, nil
 }
 

@@ -199,6 +199,24 @@
                                 <span>Tutup Semua</span>
                             </button>
                         </div>
+
+                        <!-- Simulate Query Action Button -->
+                        <div class="flex items-center space-x-1.5">
+                            <button @click="openSqlModal" type="button"
+                                class="px-3 py-1.5 text-xs font-bold rounded-lg shadow-sm transition flex items-center space-x-2"
+                                :class="changeCount > 0 ? 'bg-indigo-600 hover:bg-indigo-700 text-white ring-2 ring-indigo-300 shadow-indigo-200' : 'bg-slate-800 hover:bg-slate-900 text-slate-200'">
+                                <i class="fa-solid fa-terminal text-amber-300 text-[11px]"></i>
+                                <span>Simulate Query</span>
+                                <span v-if="changeCount > 0" class="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-extrabold">
+                                    {[ changeCount ]}
+                                </span>
+                            </button>
+                            <button v-if="changeCount > 0" @click="resetAllChanges" type="button" title="Reset semua perubahan perizinan"
+                                class="px-2 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition flex items-center space-x-1">
+                                <i class="fa-solid fa-arrow-rotate-left text-[11px]"></i>
+                                <span>Reset</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -283,12 +301,39 @@
                                                                    :class="isActionOpen(getActionKey(feat.code, act)) ? 'fa-chevron-up text-indigo-600' : 'fa-chevron-down'"></i>
                                                             </button>
                                                         </td>
-                                                        <td v-for="role in roles" :key="role" class="py-2 px-3 text-center"
-                                                            :class="filterRole === role ? 'bg-indigo-50/50 border-x border-indigo-100' : ''">
-                                                            <span v-if="act.roles[role]" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs">
+                                                        <td v-for="role in roles" :key="role" class="py-2 px-3 text-center select-none cursor-pointer transition hover:bg-indigo-100/50"
+                                                            :class="[
+                                                                filterRole === role ? 'bg-indigo-50/50 border-x border-indigo-100' : '',
+                                                                isPermissionModified(app.code, mod.code, feat.code, act, role) ? (hasRolePermission(app.code, mod.code, feat.code, act, role) ? 'bg-emerald-50/70' : 'bg-rose-50/70') : ''
+                                                            ]"
+                                                            @click.stop="togglePermission(app.code, mod.code, feat.code, act, role)"
+                                                            :title="getCellTooltip(app.code, mod.code, feat.code, act, role)">
+                                                            <!-- Case 1: Newly Granted (Modified INSERT) -->
+                                                            <span v-if="isPermissionNewlyGranted(app.code, mod.code, feat.code, act, role)" 
+                                                                class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-xs shadow-sm ring-2 ring-emerald-300 animate-pulse"
+                                                                title="Baru dicentang (akan di-INSERT). Klik untuk batalkan.">
                                                                 <i class="fa-solid fa-check"></i>
                                                             </span>
-                                                            <span v-else class="inline-block w-2 h-0.5 bg-slate-200 rounded"></span>
+                                                            <!-- Case 2: Newly Revoked (Modified DELETE) -->
+                                                            <span v-else-if="isPermissionNewlyRevoked(app.code, mod.code, feat.code, act, role)" 
+                                                                class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-100 text-rose-600 text-xs shadow-sm ring-2 ring-rose-300"
+                                                                title="Baru dicabut (akan di-DELETE). Klik untuk batalkan.">
+                                                                <i class="fa-solid fa-xmark"></i>
+                                                            </span>
+                                                            <!-- Case 3: Originally Granted (Unchanged) -->
+                                                            <span v-else-if="hasRolePermission(app.code, mod.code, feat.code, act, role)" 
+                                                                class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs hover:bg-rose-100 hover:text-rose-600 transition group/cell"
+                                                                title="Izin aktif. Klik untuk mencabut.">
+                                                                <i class="fa-solid fa-check group-hover/cell:hidden"></i>
+                                                                <i class="fa-solid fa-xmark hidden group-hover/cell:inline"></i>
+                                                            </span>
+                                                            <!-- Case 4: Originally Unchecked (Unchanged) -->
+                                                            <span v-else 
+                                                                class="inline-flex items-center justify-center w-5 h-5 rounded-full text-slate-300 hover:bg-emerald-100 hover:text-emerald-700 transition group/cell"
+                                                                title="Belum ada izin. Klik untuk mencentang.">
+                                                                <span class="inline-block w-2 h-0.5 bg-slate-200 rounded group-hover/cell:hidden"></span>
+                                                                <i class="fa-solid fa-plus hidden group-hover/cell:inline text-[10px]"></i>
+                                                            </span>
                                                         </td>
                                                     </tr>
 
@@ -392,6 +437,120 @@
             </div>
         </main>
 
+        <!-- Floating Changes Bar (When changeCount > 0) -->
+        <div v-if="changeCount > 0" class="fixed bottom-6 right-6 z-40 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center space-x-4 animate-bounce-subtle">
+            <div class="flex items-center space-x-2 text-xs">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
+                <span class="font-bold text-amber-300">{[ changeCount ]} Perubahan Terdeteksi</span>
+                <span class="text-slate-400">(+{[ newlyCheckedCount ]} / -{[ newlyUncheckedCount ]})</span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button @click="openSqlModal" type="button" class="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition flex items-center space-x-1.5 cursor-pointer">
+                    <i class="fa-solid fa-terminal text-[11px] text-amber-300"></i>
+                    <span>Simulate Query SQL</span>
+                </button>
+                <button @click="resetAllChanges" type="button" title="Batalkan semua perubahan" class="px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-rose-900 text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer">
+                    <i class="fa-solid fa-arrow-rotate-left text-[11px]"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- SQL Simulation Modal Dialog -->
+        <div v-if="showSqlModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs select-none" @click.self="closeSqlModal" @keydown.window.escape="closeSqlModal">
+            <div class="bg-slate-900 text-slate-100 rounded-2xl shadow-2xl border border-slate-700 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden select-text">
+                <!-- Modal Header -->
+                <div class="px-6 py-4 bg-slate-850 border-b border-slate-800 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md">
+                            <i class="fa-solid fa-terminal text-lg text-amber-300"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center space-x-2.5">
+                                <h3 class="text-base font-extrabold text-white tracking-tight">Simulasi Query SQL RBAC</h3>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-700/50">
+                                    be-groapp-ddl format
+                                </span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-0.5">
+                                Preview SQL idempotent seeder khusus untuk perubahan (diff) yang telah dicentang.
+                            </p>
+                        </div>
+                    </div>
+                    <button @click="closeSqlModal" type="button" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition cursor-pointer">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <!-- Modal Subheader & Filter Tabs -->
+                <div class="px-6 py-3 bg-slate-950/60 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center space-x-2 font-mono">
+                        <span class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-bold border border-slate-700">
+                            Total: {[ changeCount ]}
+                        </span>
+                        <span class="px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-400 font-bold border border-emerald-800/50">
+                            +{[ newlyCheckedCount ]} Ditambahkan (INSERT)
+                        </span>
+                        <span class="px-2 py-0.5 rounded-md bg-rose-950 text-rose-400 font-bold border border-rose-800/50">
+                            -{[ newlyUncheckedCount ]} Dicabut (DELETE)
+                        </span>
+                    </div>
+
+                    <!-- Filter Mode Tabs -->
+                    <div class="flex items-center bg-slate-800 p-1 rounded-lg border border-slate-700">
+                        <button @click="sqlFilterMode = 'all'" type="button"
+                            class="px-2.5 py-1 rounded-md font-semibold transition cursor-pointer"
+                            :class="sqlFilterMode === 'all' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'">
+                            Semua Perubahan ({[ changeCount ]})
+                        </button>
+                        <button @click="sqlFilterMode = 'insert_only'" type="button"
+                            class="px-2.5 py-1 rounded-md font-semibold transition cursor-pointer"
+                            :class="sqlFilterMode === 'insert_only' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'">
+                            Hanya INSERT ({[ newlyCheckedCount ]})
+                        </button>
+                        <button @click="sqlFilterMode = 'delete_only'" type="button"
+                            class="px-2.5 py-1 rounded-md font-semibold transition cursor-pointer"
+                            :class="sqlFilterMode === 'delete_only' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'">
+                            Hanya DELETE ({[ newlyUncheckedCount ]})
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Modal Code Body -->
+                <div class="flex-1 p-6 overflow-auto max-h-[56vh] bg-slate-950">
+                    <div v-if="changeCount === 0" class="py-12 text-center text-slate-500">
+                        <i class="fa-regular fa-folder-open text-4xl mb-3 text-slate-600"></i>
+                        <p class="text-sm font-semibold text-slate-300">Belum Ada Perubahan Perizinan</p>
+                        <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                            Silakan klik sel pada tabel matriks perizinan untuk mencentang (grant) atau mencabut (revoke) izin peran. Query SQL akan otomatis digenerate secara langsung.
+                        </p>
+                    </div>
+                    <div v-else class="relative group">
+                        <pre class="font-mono text-xs leading-relaxed text-slate-200 overflow-x-auto whitespace-pre p-4 rounded-xl bg-slate-900 border border-slate-800 select-all"><code>{[ generatedSql ]}</code></pre>
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="px-6 py-3.5 bg-slate-850 border-t border-slate-800 flex items-center justify-between">
+                    <div class="text-xs text-slate-400 flex items-center space-x-1.5">
+                        <i class="fa-solid fa-circle-info text-indigo-400 text-[11px]"></i>
+                        <span>Query di atas hanya untuk perizinan yang <strong>diubah/tercentang baru</strong> (diff), siap dieksekusi di database.</span>
+                    </div>
+                    <div class="flex items-center space-x-2.5">
+                        <button @click="copySqlToClipboard" type="button" :disabled="changeCount === 0"
+                            class="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-2 shadow-sm cursor-pointer"
+                            :class="copiedSql ? 'bg-emerald-600 text-white ring-2 ring-emerald-400' : (changeCount === 0 ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white')">
+                            <i class="fa-solid" :class="copiedSql ? 'fa-check' : 'fa-copy'"></i>
+                            <span>{[ copiedSql ? 'Tersalin ke Clipboard!' : 'Salin Query SQL' ]}</span>
+                        </button>
+                        <button @click="closeSqlModal" type="button"
+                            class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 transition cursor-pointer">
+                            Tutup
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Footer -->
         <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
             Powered by <strong>Goravel</strong> framework &bull; SmartLink GroApp RBAC Role Viewer
@@ -452,6 +611,11 @@
                     expandedModules: {},
                     expandedActionDetails: {},
                     filterRole: '',
+                    initialPermissions: {},
+                    permissionOverrides: {},
+                    showSqlModal: false,
+                    sqlFilterMode: 'all',
+                    copiedSql: false,
                 };
             },
             computed: {
@@ -504,6 +668,95 @@
                         }).filter(mod => mod.features.length > 0);
                         return { ...app, modules: filteredModules };
                     }).filter(app => app.modules.length > 0);
+                },
+                changes() {
+                    return Object.values(this.permissionOverrides);
+                },
+                changeCount() {
+                    return this.changes.length;
+                },
+                newlyCheckedCount() {
+                    return this.changes.filter(c => c.granted && !c.initial).length;
+                },
+                newlyUncheckedCount() {
+                    return this.changes.filter(c => !c.granted && c.initial).length;
+                },
+                generatedSql() {
+                    if (this.changes.length === 0) {
+                        return '-- Tidak ada perubahan perizinan yang dipilih.\n-- Centang atau batalkan centang pada tabel matriks untuk membuat query simulasi.';
+                    }
+
+                    const escapeSql = (s) => (s || '').replace(/'/g, "''");
+                    const grants = this.changes.filter(c => c.granted && !c.initial);
+                    const revokes = this.changes.filter(c => !c.granted && c.initial);
+
+                    let output = [];
+                    const now = new Date();
+                    const timestamp = now.getFullYear() + '-' +
+                        String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                        String(now.getDate()).padStart(2, '0') + ' ' +
+                        String(now.getHours()).padStart(2, '0') + ':' +
+                        String(now.getMinutes()).padStart(2, '0') + ':' +
+                        String(now.getSeconds()).padStart(2, '0');
+
+                    output.push('-- ============================================================');
+                    output.push('-- RBAC SEEDER: ROLE_PERMISSIONS (SIMULATION DIFF)');
+                    output.push('-- Generated: ' + timestamp);
+                    output.push('-- Total Changes: ' + this.changes.length + ' (' + grants.length + ' Ditambahkan/INSERT, ' + revokes.length + ' Dicabut/DELETE)');
+                    output.push('-- Format: be-groapp-ddl/seeder/rbac/*.sql (Idempotent)');
+                    output.push('-- ============================================================');
+                    output.push('');
+
+                    // 1. INSERTS (GRANTS)
+                    if ((this.sqlFilterMode === 'all' || this.sqlFilterMode === 'insert_only') && grants.length > 0) {
+                        output.push('-- ============================================================');
+                        output.push('-- 1. GRANT ROLE PERMISSIONS (INSERT - ' + grants.length + ' item)');
+                        output.push('-- ============================================================');
+
+                        for (const g of grants) {
+                            output.push(`-- Grant: ${g.roleName} -> ${g.appCode} / ${g.modCode} / ${g.featCode} / ${g.actionCode}`);
+                            output.push('INSERT INTO role_permissions (role_id, feature_action_id)');
+                            output.push('SELECT r.id, fa.id');
+                            output.push('FROM roles r');
+                            output.push('JOIN feature_actions fa ON true');
+                            output.push('JOIN features f ON f.id = fa.feature_id');
+                            output.push(`JOIN modules m ON m.id = f.module_id AND m.code = '${escapeSql(g.modCode)}'`);
+                            output.push(`JOIN applications app ON app.id = m.application_id AND app.code = '${escapeSql(g.appCode)}'`);
+                            output.push(`JOIN actions a ON a.id = fa.action_id AND a.code = '${escapeSql(g.actionCode)}'`);
+                            output.push(`WHERE r.name = '${escapeSql(g.roleName)}'`);
+                            output.push(`  AND f.code = '${escapeSql(g.featCode)}'`);
+                            output.push('ON CONFLICT (role_id, feature_action_id) DO NOTHING;');
+                            output.push('');
+                        }
+                    }
+
+                    // 2. DELETES (REVOKES)
+                    if ((this.sqlFilterMode === 'all' || this.sqlFilterMode === 'delete_only') && revokes.length > 0) {
+                        output.push('-- ============================================================');
+                        output.push('-- 2. REVOKE ROLE PERMISSIONS (DELETE - ' + revokes.length + ' item)');
+                        output.push('-- ============================================================');
+
+                        for (const r of revokes) {
+                            output.push(`-- Revoke: ${r.roleName} -> ${r.appCode} / ${r.modCode} / ${r.featCode} / ${r.actionCode}`);
+                            output.push('DELETE FROM role_permissions');
+                            output.push(`WHERE role_id = (SELECT id FROM roles WHERE name = '${escapeSql(r.roleName)}')`);
+                            output.push('  AND feature_action_id IN (');
+                            output.push('    SELECT fa.id');
+                            output.push('    FROM feature_actions fa');
+                            output.push('    JOIN features f ON f.id = fa.feature_id');
+                            output.push('    JOIN modules m ON m.id = f.module_id');
+                            output.push('    JOIN applications app ON app.id = m.application_id');
+                            output.push('    JOIN actions a ON a.id = fa.action_id');
+                            output.push(`    WHERE app.code = '${escapeSql(r.appCode)}'`);
+                            output.push(`      AND m.code = '${escapeSql(r.modCode)}'`);
+                            output.push(`      AND f.code = '${escapeSql(r.featCode)}'`);
+                            output.push(`      AND a.code = '${escapeSql(r.actionCode)}'`);
+                            output.push('  );');
+                            output.push('');
+                        }
+                    }
+
+                    return output.join('\n');
                 }
             },
             methods: {
@@ -578,11 +831,116 @@
                     if (!mod || !mod.features) return 0;
                     return mod.features.reduce((acc, feat) => acc + (feat.actions ? feat.actions.length : 0), 0);
                 },
+                getCellKey(appCode, modCode, featCode, act, role) {
+                    return appCode + '|' + modCode + '|' + featCode + '|' + act.action + '|' + role;
+                },
+                hasRolePermission(appCode, modCode, featCode, act, role) {
+                    const key = this.getCellKey(appCode, modCode, featCode, act, role);
+                    if (this.permissionOverrides[key] !== undefined) {
+                        return this.permissionOverrides[key].granted;
+                    }
+                    return !!(act.roles && act.roles[role]);
+                },
+                isPermissionModified(appCode, modCode, featCode, act, role) {
+                    const key = this.getCellKey(appCode, modCode, featCode, act, role);
+                    return this.permissionOverrides[key] !== undefined;
+                },
+                isPermissionNewlyGranted(appCode, modCode, featCode, act, role) {
+                    const key = this.getCellKey(appCode, modCode, featCode, act, role);
+                    const ov = this.permissionOverrides[key];
+                    return !!(ov && ov.granted && !ov.initial);
+                },
+                isPermissionNewlyRevoked(appCode, modCode, featCode, act, role) {
+                    const key = this.getCellKey(appCode, modCode, featCode, act, role);
+                    const ov = this.permissionOverrides[key];
+                    return !!(ov && !ov.granted && ov.initial);
+                },
+                getCellTooltip(appCode, modCode, featCode, act, role) {
+                    const granted = this.hasRolePermission(appCode, modCode, featCode, act, role);
+                    const modified = this.isPermissionModified(appCode, modCode, featCode, act, role);
+                    if (modified) {
+                        return (granted ? 'Baru dicentang (INSERT). ' : 'Baru dicabut (DELETE). ') + 'Klik untuk batalkan perubahan.';
+                    }
+                    return granted ? ('Izin aktif untuk ' + role + '. Klik untuk mencabut.') : ('Belum ada izin untuk ' + role + '. Klik untuk memberikan izin.');
+                },
+                togglePermission(appCode, modCode, featCode, act, role) {
+                    const key = this.getCellKey(appCode, modCode, featCode, act, role);
+                    const current = this.hasRolePermission(appCode, modCode, featCode, act, role);
+                    const initial = !!this.initialPermissions[key];
+                    const next = !current;
+
+                    if (next === initial) {
+                        delete this.permissionOverrides[key];
+                    } else {
+                        this.permissionOverrides[key] = {
+                            appCode,
+                            modCode,
+                            featCode,
+                            actionCode: act.action,
+                            roleName: role,
+                            granted: next,
+                            initial: initial,
+                            featureActionId: act.feature_action_id || ''
+                        };
+                    }
+                    this.permissionOverrides = { ...this.permissionOverrides };
+                },
+                resetAllChanges() {
+                    if (confirm('Batalkan semua perubahan perizinan simulasi?')) {
+                        this.permissionOverrides = {};
+                    }
+                },
+                openSqlModal() {
+                    this.showSqlModal = true;
+                },
+                closeSqlModal() {
+                    this.showSqlModal = false;
+                },
+                async copySqlToClipboard() {
+                    if (!this.generatedSql) return;
+                    try {
+                        if (navigator.clipboard && window.isSecureContext) {
+                            await navigator.clipboard.writeText(this.generatedSql);
+                        } else {
+                            const ta = document.createElement('textarea');
+                            ta.value = this.generatedSql;
+                            ta.style.position = 'fixed';
+                            ta.style.left = '-9999px';
+                            document.body.appendChild(ta);
+                            ta.focus();
+                            ta.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(ta);
+                        }
+                        this.copiedSql = true;
+                        setTimeout(() => {
+                            this.copiedSql = false;
+                        }, 3000);
+                    } catch (err) {
+                        console.error('Gagal menyalin SQL:', err);
+                    }
+                },
                 async init() {
                     try {
-                        const matRes = await fetch('/api/v1/rbac/matrix').then(r => r.json());
+                        const matRes = await fetch('/api/v1/rbac/matrix', { cache: 'no-store' }).then(r => r.json());
                         this.roles = matRes.roles || [];
                         this.applications = matRes.applications || [];
+
+                        // Store initial permission state for fast diffing
+                        this.initialPermissions = {};
+                        this.permissionOverrides = {};
+                        for (const app of this.applications) {
+                            for (const mod of (app.modules || [])) {
+                                for (const feat of (mod.features || [])) {
+                                    for (const act of (feat.actions || [])) {
+                                        for (const role of this.roles) {
+                                            const key = this.getCellKey(app.code, mod.code, feat.code, act, role);
+                                            this.initialPermissions[key] = !!(act.roles && act.roles[role]);
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         // Read ?role=... from URL query if present
                         const urlParams = new URLSearchParams(window.location.search);
