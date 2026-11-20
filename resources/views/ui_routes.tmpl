@@ -341,20 +341,24 @@
                     dropdownAutoWidth: true,
                     minimumResultsForSearch: (binding.modifiers && binding.modifiers.nosearch) ? -1 : 0
                 });
-                $el.on('select2:select select2:unselect select2:clear change', function() {
-                    if (el.value !== $el.val()) {
-                        el.value = $el.val();
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
+
+                el._prevOptionCount = el.options.length;
+
+                $el.on('select2:select select2:unselect select2:clear', function() {
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
                 });
             },
             updated(el, binding) {
                 const $el = $(el);
-                $el.select2({
-                    width: '100%',
-                    dropdownAutoWidth: true,
-                    minimumResultsForSearch: (binding.modifiers && binding.modifiers.nosearch) ? -1 : 0
-                });
+                const currentOptionCount = el.options.length;
+                if (el._prevOptionCount !== currentOptionCount) {
+                    el._prevOptionCount = currentOptionCount;
+                    $el.select2({
+                        width: '100%',
+                        dropdownAutoWidth: true,
+                        minimumResultsForSearch: (binding.modifiers && binding.modifiers.nosearch) ? -1 : 0
+                    });
+                }
                 if ($el.val() !== el.value) {
                     $el.val(el.value).trigger('change.select2');
                 }

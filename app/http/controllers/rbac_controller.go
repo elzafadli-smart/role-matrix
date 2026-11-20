@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/goravel/framework/contracts/http"
@@ -143,16 +145,181 @@ func (c *RbacController) Simulate(ctx http.Context) http.Response {
 	})
 }
 
-// loadUserCompaniesData helper: queries live database directly
-func loadUserCompaniesData() ([]UserCompanyRecord, error) {
+// UserCompanies returns paginated list of memberships for modal picker (Server-side pagination)
+func (c *RbacController) UserCompanies(ctx http.Context) http.Response {
 	orm := facades.Orm()
 	if orm == nil {
-		return nil, fmt.Errorf("database connection not initialized")
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "Database not initialized"})
 	}
 
 	encKey := facades.Config().GetString("APP_ENCRYPTION_KEY")
 
+	page, _ := strconv.Atoi(ctx.Request().Query("page"))
+	if page < 1 {
+		page = 1
+	}
+	perPage, _ := strconv.Atoi(ctx.Request().Query("per_page"))
+	if perPage < 1 {
+		perPage = 10
+	}
+	if perPage > 100 {
+		perPage = 100
+	}
+	offset := (page - 1) * perPage
+
+	search := strings.TrimSpace(ctx.Request().Query("search"))
+	role := strings.TrimSpace(ctx.Request().Query("role"))
+	company := strings.TrimSpace(ctx.Request().Query("company"))
+
+	whereClauses := []string{
+		"uc.revoked_at IS NULL",
+		"u.deleted_at IS NULL",
+		"c.deleted_at IS NULL",
+	}
+	var args []any
+
+	if role != "" {
+		whereClauses = append(whereClauses, "r.name = ?")
+		args = append(args, role)
+	}
+	if company != "" {
+		whereClauses = append(whereClauses, "c.name = ?")
+		args = append(args, company)
+	}
+	if search != "" {
+		searchParam := "%" + search + "%"
+		if strings.Contains(search, "@") {
+			whereClauses = append(whereClauses, fmt.Sprintf("(u.name ILIKE ? OR c.name ILIKE ? OR r.name ILIKE ? OR public.pgp_sym_decrypt(u.email::bytea, '%s'::text) ILIKE ?)", encKey))
+			args = append(args, searchParam, searchParam, searchParam, searchParam)
+		} else {
+			whereClauses = append(whereClauses, "(u.name ILIKE ? OR c.name ILIKE ? OR r.name ILIKE ?)")
+			args = append(args, searchParam, searchParam, searchParam)
+		}
+	}
+
+	whereSql := strings.Join(whereClauses, " AND ")
+
+	// Count total matching records
+	var total int64
+	countSql := fmt.Sprintf(`
+		SELECT COUNT(*) 
+		FROM access.user_companies uc
+		JOIN access.users u        ON uc.user_id = u.id
+		JOIN access.companies c    ON uc.company_id = c.id
+		JOIN access.roles r        ON uc.role_id = r.id
+		WHERE %s
+	`, whereSql)
+	if err := orm.Query().Raw(countSql, args...).Scan(&total); err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
+	}
+
+	// Fetch paginated memberships slice
+	dataSql := fmt.Sprintf(`
+		SELECT 
+			uc.id::text                      AS membership_id,
+			uc.user_id::text                 AS user_id,
+			u.name                           AS user_name,
+			COALESCE(public.pgp_sym_decrypt(u.email::bytea, '%s'::text), '') AS email,
+			uc.company_id::text              AS company_id,
+			c.name                           AS company_name,
+			c.business_type                  AS business_type,
+			uc.role_id::text                 AS role_id,
+			r.name                           AS role_name,
+			uc.company_access                AS company_access,
+			uc.unit_access_mode              AS unit_access_mode,
+			uc.auto_assign_future_units      AS auto_assign_future_units,
+			to_char(uc.joined_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS joined_at,
+			to_char(uc.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS revoked_at
+		FROM access.user_companies uc
+		JOIN access.users u        ON uc.user_id = u.id
+		JOIN access.companies c    ON uc.company_id = c.id
+		JOIN access.roles r        ON uc.role_id = r.id
+		WHERE %s
+		ORDER BY u.name ASC, c.name ASC
+		LIMIT ? OFFSET ?
+	`, encKey, whereSql)
+
+	dataArgs := append([]any{}, args...)
+	dataArgs = append(dataArgs, perPage, offset)
+
 	var records []UserCompanyRecord
+	if err := orm.Query().Raw(dataSql, dataArgs...).Scan(&records); err != nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": err.Error()})
+	}
+
+	totalPages := 1
+	if total > 0 {
+		totalPages = int(math.Ceil(float64(total) / float64(perPage)))
+	}
+
+	// Fetch distinct roles and companies once for filter dropdown options
+	var roles []string
+	_ = orm.Query().Raw(`
+		SELECT DISTINCT r.name 
+		FROM access.roles r 
+		JOIN access.user_companies uc ON uc.role_id = r.id 
+		WHERE uc.revoked_at IS NULL 
+		ORDER BY r.name
+	`).Scan(&roles)
+
+	var companies []string
+	_ = orm.Query().Raw(`
+		SELECT DISTINCT c.name 
+		FROM access.companies c 
+		JOIN access.user_companies uc ON uc.company_id = c.id 
+		WHERE uc.revoked_at IS NULL AND c.deleted_at IS NULL 
+		ORDER BY c.name
+	`).Scan(&companies)
+
+	return ctx.Response().Success().Json(http.Json{
+		"total":             total,
+		"total_memberships": total,
+		"page":              page,
+		"per_page":          perPage,
+		"total_pages":       totalPages,
+		"roles":             roles,
+		"companies":         companies,
+		"memberships":       records,
+	})
+}
+
+// InspectUserRole inspects the specific role of a user in a company (targeted single query)
+func (c *RbacController) InspectUserRole(ctx http.Context) http.Response {
+	userId := strings.TrimSpace(ctx.Request().Query("user_id"))
+	userEmail := strings.TrimSpace(ctx.Request().Query("email"))
+	companyId := strings.TrimSpace(ctx.Request().Query("company_id"))
+	companyName := strings.TrimSpace(ctx.Request().Query("company_name"))
+
+	orm := facades.Orm()
+	if orm == nil {
+		return ctx.Response().Json(http.StatusInternalServerError, http.Json{"error": "Database not initialized"})
+	}
+
+	encKey := facades.Config().GetString("APP_ENCRYPTION_KEY")
+
+	whereClauses := []string{
+		"uc.revoked_at IS NULL",
+		"u.deleted_at IS NULL",
+		"c.deleted_at IS NULL",
+	}
+	var args []any
+
+	if userId != "" {
+		whereClauses = append(whereClauses, "uc.user_id = ?")
+		args = append(args, userId)
+	} else if userEmail != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("(u.name ILIKE ? OR public.pgp_sym_decrypt(u.email::bytea, '%s'::text) = ?)", encKey))
+		args = append(args, userEmail, userEmail)
+	}
+
+	if companyId != "" {
+		whereClauses = append(whereClauses, "uc.company_id = ?")
+		args = append(args, companyId)
+	} else if companyName != "" {
+		whereClauses = append(whereClauses, "c.name ILIKE ?")
+		args = append(args, companyName)
+	}
+
 	query := fmt.Sprintf(`
 		SELECT 
 			uc.id::text                      AS membership_id,
@@ -173,111 +340,12 @@ func loadUserCompaniesData() ([]UserCompanyRecord, error) {
 		JOIN access.users u        ON uc.user_id = u.id
 		JOIN access.companies c    ON uc.company_id = c.id
 		JOIN access.roles r        ON uc.role_id = r.id
-		WHERE uc.revoked_at IS NULL
-		  AND u.deleted_at IS NULL
-		  AND c.deleted_at IS NULL
-		ORDER BY u.name ASC, c.name ASC
-	`, encKey)
+		WHERE %s
+		LIMIT 1
+	`, encKey, strings.Join(whereClauses, " AND "))
 
-	if err := orm.Query().Raw(query).Scan(&records); err != nil {
-		return nil, err
-	}
-
-	return records, nil
-}
-
-// UserCompanies returns list of available users, companies, and their membership options for the modal picker
-func (c *RbacController) UserCompanies(ctx http.Context) http.Response {
-	records, err := loadUserCompaniesData()
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
-			"error": err.Error(),
-		})
-	}
-
-	type UserItem struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-		Email string `json:"email"`
-	}
-	type CompanyItem struct {
-		ID           string `json:"id"`
-		Name         string `json:"name"`
-		BusinessType string `json:"business_type"`
-	}
-
-	userMap := make(map[string]UserItem)
-	compMap := make(map[string]CompanyItem)
-
-	for _, r := range records {
-		userMap[r.UserID] = UserItem{
-			ID:    r.UserID,
-			Name:  r.UserName,
-			Email: r.Email,
-		}
-		compMap[r.CompanyID] = CompanyItem{
-			ID:           r.CompanyID,
-			Name:         r.CompanyName,
-			BusinessType: r.BusinessType,
-		}
-	}
-
-	var users []UserItem
-	for _, u := range userMap {
-		users = append(users, u)
-	}
-	var companies []CompanyItem
-	for _, co := range compMap {
-		companies = append(companies, co)
-	}
-
-	return ctx.Response().Success().Json(http.Json{
-		"total_users":       len(users),
-		"total_companies":   len(companies),
-		"total_memberships": len(records),
-		"users":             users,
-		"companies":         companies,
-		"memberships":       records,
-	})
-}
-
-// InspectUserRole inspects the specific role of a user in a company
-func (c *RbacController) InspectUserRole(ctx http.Context) http.Response {
-	userId := ctx.Request().Query("user_id")
-	userEmail := ctx.Request().Query("email")
-	companyId := ctx.Request().Query("company_id")
-	companyName := ctx.Request().Query("company_name")
-
-	records, err := loadUserCompaniesData()
-	if err != nil {
-		return ctx.Response().Json(http.StatusInternalServerError, http.Json{
-			"error": err.Error(),
-		})
-	}
-
-	var matched *UserCompanyRecord
-	for _, r := range records {
-		userMatch := false
-		if userId != "" && r.UserID == userId {
-			userMatch = true
-		} else if userEmail != "" && (strings.EqualFold(r.Email, userEmail) || strings.EqualFold(r.UserName, userEmail)) {
-			userMatch = true
-		}
-
-		compMatch := false
-		if companyId != "" && r.CompanyID == companyId {
-			compMatch = true
-		} else if companyName != "" && strings.EqualFold(r.CompanyName, companyName) {
-			compMatch = true
-		}
-
-		if userMatch && compMatch {
-			matched = &r
-			break
-		}
-	}
-
-	if matched == nil {
+	var matched UserCompanyRecord
+	if err := orm.Query().Raw(query, args...).Scan(&matched); err != nil || matched.MembershipID == "" {
 		return ctx.Response().Json(http.StatusNotFound, http.Json{
 			"error": "User membership in company not found",
 		})
@@ -285,7 +353,7 @@ func (c *RbacController) InspectUserRole(ctx http.Context) http.Response {
 
 	// Business units for company: query live from database
 	var businessUnits []map[string]string
-	if orm := facades.Orm(); orm != nil && matched.CompanyID != "" {
+	if matched.CompanyID != "" {
 		type BuRow struct {
 			ID       string `gorm:"column:id"`
 			Name     string `gorm:"column:name"`

@@ -214,7 +214,7 @@
                             <thead class="sticky top-0 z-20 bg-slate-900 shadow-md border-b-2 border-indigo-500">
                                 <tr class="bg-slate-900 text-slate-200 text-xs uppercase tracking-wider font-bold">
                                     <th class="sticky top-0 z-20 bg-slate-900 py-3.5 px-4 w-1/4 text-white shadow-xs">Module &amp; Feature</th>
-                                    <th class="sticky top-0 z-20 bg-slate-900 py-3.5 px-3 w-28 text-white shadow-xs">Action</th>
+                                    <th class="sticky top-0 z-20 bg-slate-900 py-3.5 px-3 w-36 text-white shadow-xs">Action &amp; Detail</th>
                                     <th v-for="role in roles" :key="role" class="sticky top-0 z-20 bg-slate-900 py-3.5 px-3 text-center shadow-xs transition"
                                         :class="filterRole === role ? 'bg-indigo-950 text-amber-300 border-x-2 border-indigo-500 font-extrabold shadow-inner' : 'text-slate-200'">
                                         {[ role ]}
@@ -262,24 +262,123 @@
                                         <!-- Collapsible Feature & Action Rows -->
                                         <template v-if="isModuleOpen(app.code, mod.code)">
                                             <template v-for="feat in mod.features" :key="feat.code">
-                                                <tr v-for="(act, idx) in feat.actions" :key="act.action" class="hover:bg-slate-50/80 transition">
-                                                    <td class="py-2 px-4 text-xs text-slate-700 font-mono">
-                                                        <span v-if="idx === 0" class="flex items-center space-x-1.5 pl-6">
-                                                            <i class="fa-regular fa-file-code text-slate-400"></i>
-                                                            <span class="font-bold text-slate-900">{[ feat.code ]}</span>
-                                                        </span>
-                                                    </td>
-                                                    <td class="py-2 px-3">
-                                                        <span class="action-chip" :class="'action-' + act.action">{[ act.action ]}</span>
-                                                    </td>
-                                                    <td v-for="role in roles" :key="role" class="py-2 px-3 text-center"
-                                                        :class="filterRole === role ? 'bg-indigo-50/50 border-x border-indigo-100' : ''">
-                                                        <span v-if="act.roles[role]" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs">
-                                                            <i class="fa-solid fa-check"></i>
-                                                        </span>
-                                                        <span v-else class="inline-block w-2 h-0.5 bg-slate-200 rounded"></span>
-                                                    </td>
-                                                </tr>
+                                                <template v-for="(act, idx) in feat.actions" :key="getActionKey(feat.code, act)">
+                                                    <tr class="hover:bg-slate-50/80 transition" :class="isActionOpen(getActionKey(feat.code, act)) ? 'bg-indigo-50/30' : ''">
+                                                        <td class="py-2 px-4 text-xs text-slate-700 font-mono">
+                                                            <span v-if="idx === 0" class="flex items-center space-x-1.5 pl-6">
+                                                                <i class="fa-regular fa-file-code text-slate-400"></i>
+                                                                <span class="font-bold text-slate-900">{[ feat.code ]}</span>
+                                                            </span>
+                                                        </td>
+                                                        <td class="py-2 px-3">
+                                                            <button @click.stop="toggleActionDetails(getActionKey(feat.code, act))" 
+                                                                type="button" 
+                                                                class="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-lg hover:bg-slate-200/70 border border-transparent hover:border-slate-300 transition group text-left cursor-pointer select-none"
+                                                                :title="isActionOpen(getActionKey(feat.code, act)) ? 'Tutup rincian baris' : 'Buka rincian baris endpoint & ui route'">
+                                                                <span class="action-chip" :class="'action-' + act.action">{[ act.action ]}</span>
+                                                                <span v-if="(act.endpoints && act.endpoints.length) || (act.ui_routes && act.ui_routes.length)" class="text-[10px] font-mono font-medium text-slate-400 group-hover:text-indigo-600">
+                                                                    ({[ (act.endpoints || []).length + (act.ui_routes || []).length ]})
+                                                                </span>
+                                                                <i class="fa-solid text-[9px] text-slate-400 group-hover:text-indigo-600 transition-transform duration-200"
+                                                                   :class="isActionOpen(getActionKey(feat.code, act)) ? 'fa-chevron-up text-indigo-600' : 'fa-chevron-down'"></i>
+                                                            </button>
+                                                        </td>
+                                                        <td v-for="role in roles" :key="role" class="py-2 px-3 text-center"
+                                                            :class="filterRole === role ? 'bg-indigo-50/50 border-x border-indigo-100' : ''">
+                                                            <span v-if="act.roles[role]" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs">
+                                                                <i class="fa-solid fa-check"></i>
+                                                            </span>
+                                                            <span v-else class="inline-block w-2 h-0.5 bg-slate-200 rounded"></span>
+                                                        </td>
+                                                    </tr>
+
+                                                    <!-- Sub-rows when action is expanded: API Endpoints & UI Routes pushed to align with Action column -->
+                                                    <template v-if="isActionOpen(getActionKey(feat.code, act))">
+                                                        <!-- SECTION 1: API ENDPOINTS -->
+                                                        <!-- Header: API Endpoints -->
+                                                        <tr class="bg-indigo-50/80 border-t-2 border-indigo-200">
+                                                            <td class="bg-slate-50/40 border-r border-indigo-100"></td>
+                                                            <td :colspan="1 + roles.length" class="py-2 px-3 text-xs border-l-4 border-indigo-500">
+                                                                <div class="flex items-center justify-between pl-2">
+                                                                    <div class="flex items-center space-x-2 font-bold text-indigo-950">
+                                                                        <i class="fa-solid fa-network-wired text-indigo-600"></i>
+                                                                        <span>API Endpoints Terkait</span>
+                                                                        <span class="px-2 py-0.5 rounded-full text-[10px] bg-indigo-200/80 text-indigo-900 font-mono font-bold">
+                                                                            {[ (act.endpoints || []).length ]}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div class="text-[11px] text-slate-500 font-mono pr-4">
+                                                                        Permission: <code class="text-indigo-700 bg-white px-1.5 py-0.5 rounded border border-indigo-100 font-semibold">{[ act.permission_key ]}</code>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+
+                                                        <!-- API Endpoint Rows (Aligned with Action Column) -->
+                                                        <template v-if="act.endpoints && act.endpoints.length > 0">
+                                                            <tr v-for="ep in act.endpoints" :key="'ep:' + ep" class="bg-slate-50/60 hover:bg-indigo-50/40 transition border-t border-slate-100">
+                                                                <td class="bg-slate-50/40 border-r border-indigo-100"></td>
+                                                                <td :colspan="1 + roles.length" class="py-2 px-3 text-xs font-mono border-l-4 border-indigo-500">
+                                                                    <div class="flex items-center space-x-3 pl-2">
+                                                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wider shadow-2xs shrink-0"
+                                                                            :class="getMethodClass(getEndpointMethod(ep))">
+                                                                            {[ getEndpointMethod(ep) ]}
+                                                                        </span>
+                                                                        <span class="font-bold text-slate-800 text-xs break-all">{[ getEndpointPath(ep) ]}</span>
+                                                                        <span v-if="getEndpointService(ep)" class="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-md text-[11px] bg-slate-100 text-slate-700 border border-slate-200 shrink-0 font-sans shadow-2xs">
+                                                                            <i class="fa-solid fa-server text-[10px] text-indigo-500"></i>
+                                                                            <span class="text-slate-400 font-semibold text-[10px] uppercase tracking-wider">service:</span>
+                                                                            <span class="font-mono font-bold text-slate-800">{[ getEndpointService(ep) ]}</span>
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        </template>
+                                                        <tr v-else class="bg-slate-50/30 border-t border-slate-100">
+                                                            <td class="bg-slate-50/40 border-r border-indigo-100"></td>
+                                                            <td :colspan="1 + roles.length" class="py-2 px-3 pl-4 text-slate-400 italic text-xs border-l-4 border-indigo-500">
+                                                                <i class="fa-regular fa-circle-question mr-1.5"></i> Tidak ada API endpoint yang dipetakan ke aksi ini.
+                                                            </td>
+                                                        </tr>
+
+                                                        <!-- SECTION 2: FRONTEND UI ROUTES -->
+                                                        <!-- Header: Frontend UI Routes -->
+                                                        <tr class="bg-purple-50/80 border-t-2 border-purple-200">
+                                                            <td class="bg-slate-50/40 border-r border-purple-100"></td>
+                                                            <td :colspan="1 + roles.length" class="py-2 px-3 text-xs border-l-4 border-purple-500">
+                                                                <div class="flex items-center space-x-2 font-bold text-purple-950 pl-2">
+                                                                    <i class="fa-solid fa-compass text-purple-600"></i>
+                                                                    <span>Frontend UI Routes Terkait</span>
+                                                                    <span class="px-2 py-0.5 rounded-full text-[10px] bg-purple-200/80 text-purple-900 font-mono font-bold">
+                                                                        {[ (act.ui_routes || []).length ]}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+
+                                                        <!-- UI Route Rows (Aligned with Action Column) -->
+                                                        <template v-if="act.ui_routes && act.ui_routes.length > 0">
+                                                            <tr v-for="ur in act.ui_routes" :key="'ur:' + ur" class="bg-slate-50/60 hover:bg-purple-50/40 transition border-t border-slate-100">
+                                                                <td class="bg-slate-50/40 border-r border-purple-100"></td>
+                                                                <td :colspan="1 + roles.length" class="py-2 px-3 text-xs font-mono border-l-4 border-purple-500">
+                                                                    <div class="flex items-center space-x-3 pl-2">
+                                                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-purple-100 text-purple-800 border border-purple-200 tracking-wider shrink-0">
+                                                                            ROUTE
+                                                                        </span>
+                                                                        <i class="fa-regular fa-window-maximize text-purple-500 text-xs shrink-0"></i>
+                                                                        <span class="text-purple-950 font-bold text-xs break-all">{[ ur ]}</span>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        </template>
+                                                        <tr v-else class="bg-slate-50/30 border-t border-slate-100">
+                                                            <td class="bg-slate-50/40 border-r border-purple-100"></td>
+                                                            <td :colspan="1 + roles.length" class="py-2 px-3 pl-4 text-slate-400 italic text-xs border-l-4 border-purple-500">
+                                                                <i class="fa-regular fa-circle-question mr-1.5"></i> Tidak ada UI route yang dipetakan ke aksi ini.
+                                                            </td>
+                                                        </tr>
+                                                    </template>
+                                                </template>
                                             </template>
                                         </template>
                                     </template>
@@ -308,20 +407,24 @@
                     dropdownAutoWidth: true,
                     minimumResultsForSearch: (binding.modifiers && binding.modifiers.nosearch) ? -1 : 0
                 });
-                $el.on('select2:select select2:unselect select2:clear change', function() {
-                    if (el.value !== $el.val()) {
-                        el.value = $el.val();
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
+
+                el._prevOptionCount = el.options.length;
+
+                $el.on('select2:select select2:unselect select2:clear', function() {
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
                 });
             },
             updated(el, binding) {
                 const $el = $(el);
-                $el.select2({
-                    width: '100%',
-                    dropdownAutoWidth: true,
-                    minimumResultsForSearch: (binding.modifiers && binding.modifiers.nosearch) ? -1 : 0
-                });
+                const currentOptionCount = el.options.length;
+                if (el._prevOptionCount !== currentOptionCount) {
+                    el._prevOptionCount = currentOptionCount;
+                    $el.select2({
+                        width: '100%',
+                        dropdownAutoWidth: true,
+                        minimumResultsForSearch: (binding.modifiers && binding.modifiers.nosearch) ? -1 : 0
+                    });
+                }
                 if ($el.val() !== el.value) {
                     $el.val(el.value).trigger('change.select2');
                 }
@@ -345,6 +448,7 @@
                     selectedApp: '',
                     selectedModule: '',
                     expandedModules: {},
+                    expandedActionDetails: {},
                     filterRole: '',
                 };
             },
@@ -401,6 +505,47 @@
                 }
             },
             methods: {
+                getActionKey(featCode, act) {
+                    return act.feature_action_id || (featCode + ':' + act.action);
+                },
+                toggleActionDetails(key) {
+                    this.expandedActionDetails[key] = !this.expandedActionDetails[key];
+                    this.expandedActionDetails = { ...this.expandedActionDetails };
+                },
+                isActionOpen(key) {
+                    return !!this.expandedActionDetails[key];
+                },
+                getEndpointMethod(ep) {
+                    if (!ep) return 'API';
+                    const parts = ep.trim().split(/\s+/);
+                    return parts[0] || 'API';
+                },
+                getEndpointPath(ep) {
+                    if (!ep) return '';
+                    const parts = ep.trim().split(/\s+/);
+                    if (parts.length > 1) {
+                        const rest = parts.slice(1).join(' ');
+                        const parenIdx = rest.indexOf('(');
+                        if (parenIdx !== -1) {
+                            return rest.substring(0, parenIdx).trim();
+                        }
+                        return rest;
+                    }
+                    return ep;
+                },
+                getEndpointService(ep) {
+                    if (!ep) return '';
+                    const m = ep.match(/\(([^)]+)\)/);
+                    return m ? m[1] : '';
+                },
+                getMethodClass(method) {
+                    const m = (method || '').toUpperCase();
+                    if (m === 'GET') return 'bg-blue-100 text-blue-800 border border-blue-200';
+                    if (m === 'POST') return 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+                    if (m === 'PUT' || m === 'PATCH') return 'bg-amber-100 text-amber-800 border border-amber-200';
+                    if (m === 'DELETE') return 'bg-rose-100 text-rose-800 border border-rose-200';
+                    return 'bg-slate-100 text-slate-700 border border-slate-200';
+                },
                 isModuleOpen(appCode, modCode) {
                     if (this.searchKeyword || this.selectedModule) return true;
                     const key = appCode + ':' + modCode;
@@ -422,9 +567,20 @@
                 },
                 onAppChange() {
                     this.selectedModule = '';
+                    if (this.selectedApp) {
+                        for (const app of this.applications) {
+                            if (app.code === this.selectedApp) {
+                                for (const mod of (app.modules || [])) {
+                                    this.expandedModules[app.code + ':' + mod.code] = true;
+                                }
+                            }
+                        }
+                        this.expandedModules = { ...this.expandedModules };
+                    }
                 },
                 collapseAllModules() {
                     this.expandedModules = {};
+                    this.expandedActionDetails = {};
                 },
                 getModuleActionCount(mod) {
                     if (!mod || !mod.features) return 0;
