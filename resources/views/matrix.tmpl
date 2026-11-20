@@ -319,13 +319,15 @@
                                                             <tr v-for="ep in act.endpoints" :key="'ep:' + ep" class="bg-slate-50/60 hover:bg-indigo-50/40 transition border-t border-slate-100">
                                                                 <td class="bg-slate-50/40 border-r border-indigo-100"></td>
                                                                 <td :colspan="1 + roles.length" class="py-2 px-3 text-xs font-mono border-l-4 border-indigo-500">
-                                                                    <div class="flex items-center space-x-3 pl-2">
-                                                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wider shadow-2xs shrink-0"
-                                                                            :class="getMethodClass(getEndpointMethod(ep))">
-                                                                            {[ getEndpointMethod(ep) ]}
-                                                                        </span>
-                                                                        <span class="font-bold text-slate-800 text-xs break-all">{[ getEndpointPath(ep) ]}</span>
-                                                                        <span v-if="getEndpointService(ep)" class="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-md text-[11px] bg-slate-100 text-slate-700 border border-slate-200 shrink-0 font-sans shadow-2xs">
+                                                                    <div class="flex items-center justify-between gap-3 pl-2 pr-2">
+                                                                        <div class="flex items-center space-x-3 min-w-0">
+                                                                            <span class="px-2 py-0.5 rounded text-[10px] font-bold font-mono tracking-wider shadow-2xs shrink-0"
+                                                                                :class="getMethodClass(getEndpointMethod(ep))">
+                                                                                {[ getEndpointMethod(ep) ]}
+                                                                            </span>
+                                                                            <span class="font-bold text-slate-800 text-xs break-all">{[ getEndpointPath(ep) ]}</span>
+                                                                        </div>
+                                                                        <span v-if="getEndpointService(ep)" class="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-md text-[11px] bg-slate-100 text-slate-700 border border-slate-200 shrink-0 font-sans shadow-2xs ml-auto">
                                                                             <i class="fa-solid fa-server text-[10px] text-indigo-500"></i>
                                                                             <span class="text-slate-400 font-semibold text-[10px] uppercase tracking-wider">service:</span>
                                                                             <span class="font-mono font-bold text-slate-800">{[ getEndpointService(ep) ]}</span>
@@ -567,16 +569,6 @@
                 },
                 onAppChange() {
                     this.selectedModule = '';
-                    if (this.selectedApp) {
-                        for (const app of this.applications) {
-                            if (app.code === this.selectedApp) {
-                                for (const mod of (app.modules || [])) {
-                                    this.expandedModules[app.code + ':' + mod.code] = true;
-                                }
-                            }
-                        }
-                        this.expandedModules = { ...this.expandedModules };
-                    }
                 },
                 collapseAllModules() {
                     this.expandedModules = {};
@@ -597,15 +589,9 @@
                         const roleParam = urlParams.get('role');
                         if (roleParam && this.roles.includes(roleParam)) {
                             this.filterRole = roleParam;
-                            this.expandAllModules();
-                        } else if (this.applications.length > 0 && this.applications[0].modules && this.applications[0].modules.length > 0) {
-                            // Expand first module by default
-                            const firstApp = this.applications[0];
-                            const firstMod = firstApp.modules[0];
-                            this.expandedModules = {
-                                [firstApp.code + ':' + firstMod.code]: true
-                            };
                         }
+                        // Default all module accordions collapsed
+                        this.expandedModules = {};
                         this.loading = false;
                     } catch (err) {
                         console.error("Init error:", err);
